@@ -1,0 +1,17 @@
+src/
+test/
+coverage/
+.github/
+.vscode/
+.idea/
+tsconfig.json
+tsconfig.eslint.json
+jest.config.js
+.eslintrc.cjs
+.prettierrc
+.prettierignore
+.editorconfig
+.gitignore
+*.tsbuildinfo
+*.log
+.DS_Store
