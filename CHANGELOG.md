@@ -24,3 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Consensus engine with `any` / `majority` / `all` strategies; abstaining sources are excluded by the caller and never pollute the vote.
   - Typed `WeatherError` for `timeout` / `network` / `http` / `protocol` / `config` kinds.
   - 33 unit tests; total suite now 63.
+- Shared domain types (`src/types.ts`): `Zone`, `ZoneType`, `CompassOctant`, `WindUnit`, `WindBlockingConfig`, `RainBlockingConfig`.
+- Unit converter (`src/unitConverter.ts`): bidirectional m/s ↔ km/h / mph / kts / Bft with the spec's exact factors. All internal storage stays in m/s; conversions happen only at the UI edge.
+- Blocking engine (`src/blockingEngine.ts`):
+  - `degreesToOctant` mapping wind bearings to one of N/NE/E/SE/S/SW/W/NW with N straddling the 0/360 boundary.
+  - `evaluateWindBlocking` / `evaluateRainBlocking` produce per-source votes, abstain on missing metrics, then feed the consensus engine.
+  - `evaluateZoneBlocking` combines both decisions for the platform layer.
+- 46 new tests; total suite now 109.
