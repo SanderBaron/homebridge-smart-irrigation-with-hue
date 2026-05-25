@@ -95,13 +95,11 @@ describe('discoverBridges', () => {
 
   it('falls back to cloud discovery when mDNS is empty', async () => {
     const { bonjour } = createMockBonjour();
-    const fetchImpl = jest
-      .fn()
-      .mockResolvedValue(
-        new Response(JSON.stringify([{ id: 'aabbccdd', internalipaddress: '192.0.2.1' }]), {
-          status: 200,
-        }),
-      ) as unknown as typeof fetch;
+    const fetchImpl = jest.fn().mockResolvedValue(
+      new Response(JSON.stringify([{ id: 'aabbccdd', internalipaddress: '192.0.2.1' }]), {
+        status: 200,
+      }),
+    ) as unknown as typeof fetch;
 
     const result = await discoverBridges({
       timeoutMs: 20,
