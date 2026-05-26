@@ -941,15 +941,30 @@ function validate(cfg) {
     if (!z.name) issues.push(`zone ${z.id}: name is required`);
     if (!z.hueLightId) issues.push(`zone ${z.name || z.id}: select a Hue outlet`);
   }
+  const knownZoneIds = new Set(cfg.zones.map((z) => z.id));
   for (const e of cfg.schedule) {
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(e.startTime)) {
       issues.push(`schedule "${e.name}": startTime must be HH:MM`);
     }
-    if (!(e.durationMin > 0)) {
-      issues.push(`schedule "${e.name}": durationMin must be > 0`);
-    }
     if (!e.days || e.days.length === 0) {
       issues.push(`schedule "${e.name}": choose at least one day`);
+    }
+    if (!Array.isArray(e.steps) || e.steps.length === 0) {
+      issues.push(`schedule "${e.name}": add at least one step`);
+    } else {
+      e.steps.forEach((step, idx) => {
+        const label = `schedule "${e.name}" step ${idx + 1}`;
+        if (!step.zoneId || !knownZoneIds.has(step.zoneId)) {
+          issues.push(`${label}: pick a zone`);
+        }
+        if (!(Number(step.durationMin) > 0)) {
+          issues.push(`${label}: duration must be > 0`);
+        }
+      });
+    }
+    const r = Number(e.repeat);
+    if (!Number.isFinite(r) || r < 1) {
+      issues.push(`schedule "${e.name}": repeat must be 1 or more`);
     }
   }
   if (cfg.weather.sources.includes('openweathermap') && !cfg.weather.openWeatherMapApiKey) {
