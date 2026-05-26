@@ -28,6 +28,12 @@ export interface SchedulerOptions {
    * polling.
    */
   onStateChange?: () => void;
+  /**
+   * Optional notifier fired when a manually-triggered run (via
+   * {@link runAllEntriesNow}) starts or finishes. Lets the platform reflect
+   * the state of the "Run Schedule Now" switch in Apple Home.
+   */
+  onManualRunStateChange?: (active: boolean) => void;
   /** Injectable clock; defaults to `() => new Date()`. */
   nowFn?: () => Date;
   log?: Logging;
@@ -55,6 +61,12 @@ interface ActiveSequence {
   stepIndex: number;
   /** The zoneId currently running for this sequence's step (cleared on advance). */
   runningZoneId: string | undefined;
+  /**
+   * True when this sequence was started by {@link runAllEntriesNow} (the
+   * "Run Schedule Now" switch). Lets the platform light up that switch
+   * only while the manual run is in progress.
+   */
+  manuallyTriggered: boolean;
 }
 
 /**
@@ -91,14 +103,17 @@ export class Scheduler {
   private readonly stopZoneCb: (zoneId: string) => Promise<void>;
   private readonly isZoneBlockedCb: ((zoneId: string) => boolean) | undefined;
   private readonly onStateChangeCb: (() => void) | undefined;
+  private readonly onManualRunStateChangeCb: ((active: boolean) => void) | undefined;
   private readonly nowFn: () => Date;
   private readonly log: Logging | undefined;
+  private lastManualRunActive = false;
 
   public constructor(options: SchedulerOptions) {
     this.startZoneCb = options.startZone;
     this.stopZoneCb = options.stopZone;
     this.isZoneBlockedCb = options.isZoneBlocked;
     this.onStateChangeCb = options.onStateChange;
+    this.onManualRunStateChangeCb = options.onManualRunStateChange;
     this.nowFn = options.nowFn ?? ((): Date => new Date());
     this.log = options.log;
   }
@@ -206,7 +221,9 @@ export class Scheduler {
    * Run every configured schedule entry right now, regardless of the day or
    * start time. Intended for the "Run Schedule Now" switch in Apple Home.
    * Respects weather blocking, the run-with model, and concurrency just like
-   * a normal scheduled fire.
+   * a normal scheduled fire. The created sequences are tagged as manually
+   * triggered so the switch in Apple Home can light up only while *this*
+   * run is in progress.
    */
   public runAllEntriesNow(): void {
     const now = this.nowFn();
@@ -216,7 +233,30 @@ export class Scheduler {
     }
     this.log?.info('Run-now triggered for %d schedule entries', this.entries.length);
     for (const entry of this.entries) {
-      this.fireEntry(entry, now);
+      const seq: ActiveSequence = {
+        entryId: entry.id,
+        entry,
+        repeatIndex: 0,
+        stepIndex: 0,
+        runningZoneId: undefined,
+        manuallyTriggered: true,
+      };
+      this.activeSequences.push(seq);
+      this.advanceSequence(seq, now.getTime());
+    }
+    this.notifyManualRunState();
+  }
+
+  /** True if any sequence started via `runAllEntriesNow` is still in progress. */
+  public hasActiveManualRun(): boolean {
+    return this.activeSequences.some((s) => s.manuallyTriggered);
+  }
+
+  private notifyManualRunState(): void {
+    const active = this.hasActiveManualRun();
+    if (active !== this.lastManualRunActive) {
+      this.lastManualRunActive = active;
+      this.onManualRunStateChangeCb?.(active);
     }
   }
 
@@ -245,6 +285,7 @@ export class Scheduler {
       }
       this.activeRuns.delete(id);
     }
+    this.notifyManualRunState();
     await Promise.allSettled(zoneIds.map((id) => this.stopZoneCb(id)));
   }
 
@@ -265,6 +306,7 @@ export class Scheduler {
       repeatIndex: 0,
       stepIndex: 0,
       runningZoneId: undefined,
+      manuallyTriggered: false,
     };
     this.activeSequences.push(seq);
     this.advanceSequence(seq, now.getTime());
@@ -323,6 +365,7 @@ export class Scheduler {
     if (idx !== -1) {
       this.activeSequences.splice(idx, 1);
     }
+    this.notifyManualRunState();
   }
 
   private tryStartAll(): void {

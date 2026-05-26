@@ -301,13 +301,13 @@ export class SmartIrrigationAccessory {
           if (on) {
             this.platform.log.info('Run Schedule Now requested');
             this.deps.scheduler.runAllEntriesNow();
-            // Momentary: snap the switch back off after a short blink so the
-            // user gets visual feedback without it staying "on" while the
-            // sequence runs in the background.
-            setTimeout(() => {
-              const svc = this.switchServices.get(plan.subtype);
-              svc?.updateCharacteristic(this.platform.Characteristic.On, false);
-            }, 1500);
+            // The switch is kept ON by syncManualRunSwitch (fired by the
+            // scheduler when the manual sequences start). It auto-flips off
+            // when all manual sequences complete, or when the user taps OFF
+            // below to abort.
+          } else {
+            this.platform.log.info('Run Schedule Now aborted by user');
+            void this.deps.scheduler.stopAll();
           }
           break;
         case 'wind-override':
@@ -453,6 +453,17 @@ export class SmartIrrigationAccessory {
     svc.updateCharacteristic(this.platform.Characteristic.InUse, value);
   }
 
+  /**
+   * Mirror the scheduler's manual-run state into the "Run Schedule Now"
+   * switch. The scheduler fires this callback when the first manually-
+   * triggered sequence starts and again when the last one completes (or is
+   * aborted via stopAll).
+   */
+  public syncManualRunSwitch(active: boolean): void {
+    const svc = this.switchServices.get('switch-run-now');
+    svc?.updateCharacteristic(this.platform.Characteristic.On, active);
+  }
+
   /** Mirror an override flip back to the corresponding Switch.On. Called from the platform's `onChange` wiring. */
   public syncOverrideSwitch(zoneId: string, kind: 'wind' | 'rain', active: boolean): void {
     const subtype =
@@ -466,7 +477,10 @@ export class SmartIrrigationAccessory {
       case 'schedule':
         return this.deps.scheduler.isActive();
       case 'run-now':
-        return false; // momentary — always reads as off
+        // Reflects whether a manual run is currently in progress. After a
+        // Homebridge restart the scheduler is empty so this resolves to
+        // false, which is the correct boot state.
+        return this.deps.scheduler.hasActiveManualRun();
       case 'wind-override':
         return plan.zoneId !== undefined
           ? this.deps.overrideManager.isOverridden(plan.zoneId, 'wind')

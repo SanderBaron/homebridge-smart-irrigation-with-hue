@@ -157,6 +157,9 @@ export class SmartIrrigationPlatform implements DynamicPlatformPlugin {
       },
       isZoneBlocked: (zoneId) => this.isZoneBlocked(zoneId),
       onStateChange: () => this.schedulePersist(),
+      onManualRunStateChange: (active) => {
+        this.accessoryBuilder?.syncManualRunSwitch(active);
+      },
       log: this.log,
     });
     this.scheduler.setZones(result.config.zones);
