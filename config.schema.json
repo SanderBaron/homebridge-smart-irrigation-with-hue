@@ -139,10 +139,12 @@
               "minLength": 1,
               "description": "Hue light id that powers this zone's valve."
             },
-            "concurrencyGroup": {
-              "title": "Concurrency group",
-              "type": "string",
-              "description": "Zones with the same group can water simultaneously. Empty means standalone (always alone)."
+            "runWith": {
+              "title": "Run alongside this zone",
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string" },
+              "description": "Zone ids that should automatically start when this zone starts (manually or via schedule), for the same duration. Use the custom UI to pick from your other zones."
             },
             "windBlocking": {
               "title": "Wind blocking",

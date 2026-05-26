@@ -260,7 +260,7 @@ export class SmartIrrigationAccessory {
   private async openValve(
     zoneId: string,
     durationMs: number,
-    source: 'manual' | 'schedule',
+    source: 'manual' | 'schedule' | 'manual-buddy',
   ): Promise<void> {
     const state = this.valveState.get(zoneId);
     if (state === undefined) {
@@ -303,6 +303,22 @@ export class SmartIrrigationAccessory {
 
     this.syncValveActiveCharacteristic(zoneId, true);
     this.updateIrrigationInUse();
+
+    // Manual opens pull along the zone's run-with buddies for the same
+    // duration. The schedule path doesn't repeat this because the scheduler
+    // has already expanded the entry's zone list with each zone's buddies.
+    if (source === 'manual') {
+      for (const buddyId of zone.runWith ?? []) {
+        void this.openValve(buddyId, durationMs, 'manual-buddy').catch((err: unknown) => {
+          this.platform.log.warn(
+            'Failed to open run-with buddy %s for %s: %s',
+            buddyId,
+            zoneId,
+            String(err),
+          );
+        });
+      }
+    }
   }
 
   private async closeValve(zoneId: string, reason: string): Promise<void> {

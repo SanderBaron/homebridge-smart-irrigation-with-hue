@@ -261,39 +261,102 @@ export class Scheduler {
     if (this.activeRuns.size === 0) {
       return true;
     }
-    const zone = this.zonesById.get(zoneId);
-    const group = zone?.concurrencyGroup;
-    if (group === undefined || group === '') {
-      return false; // standalone cannot join a non-empty active set
-    }
     for (const activeId of this.activeRuns.keys()) {
-      const activeZone = this.zonesById.get(activeId);
-      if (activeZone?.concurrencyGroup !== group) {
+      if (!this.areCompatible(zoneId, activeId)) {
         return false;
       }
     }
     return true;
   }
 
+  /**
+   * Two zones may run simultaneously iff at least one of them lists the other
+   * in its `runWith` array. The relationship is one-directional in storage
+   * but symmetric in effect — if A's runWith includes B, A and B can coexist
+   * regardless of what B's runWith says.
+   */
+  private areCompatible(zoneIdA: string, zoneIdB: string): boolean {
+    if (zoneIdA === zoneIdB) {
+      return true;
+    }
+    const a = this.zonesById.get(zoneIdA);
+    const b = this.zonesById.get(zoneIdB);
+    if (a?.runWith?.includes(zoneIdB)) {
+      return true;
+    }
+    if (b?.runWith?.includes(zoneIdA)) {
+      return true;
+    }
+    return false;
+  }
+
   private startRun(run: PendingZoneRun): void {
-    this.log?.info('Starting zone %s for %d s', run.zoneId, run.durationMs / 1000);
+    const wasActive = this.activeRuns.has(run.zoneId);
+    const existingTimer = this.activeRuns.get(run.zoneId);
+    if (existingTimer !== undefined) {
+      // Buddy was already running — clear its old timer so we don't stop it
+      // prematurely; the new timer below extends the run.
+      clearTimeout(existingTimer);
+    }
+
+    const action = wasActive ? 'extending zone' : 'starting zone';
+    this.log?.info('%s %s for %d s', action, run.zoneId, run.durationMs / 1000);
+
     const timer = setTimeout(() => {
       void this.finishRun(run.zoneId);
     }, run.durationMs);
     this.activeRuns.set(run.zoneId, timer);
-    void this.startZoneCb(run.zoneId, run.durationMs).catch((err: unknown) => {
-      this.log?.error('startZone(%s) failed: %s', run.zoneId, String(err));
-      this.cancelRun(run.zoneId);
-    });
+
+    if (!wasActive) {
+      void this.startZoneCb(run.zoneId, run.durationMs).catch((err: unknown) => {
+        this.log?.error('startZone(%s) failed: %s', run.zoneId, String(err));
+        this.cancelRun(run.zoneId);
+      });
+    }
+
+    // Lazy run-with expansion: pull in each buddy zone now that the trigger
+    // zone is actually starting fresh. We skip expansion on extension
+    // (wasActive) so two mutually-listed zones don't endlessly re-push each
+    // other into the queue. A later entry's fresh start will re-push and
+    // extend the buddy's timer as needed (handles the drip-rides-along case).
+    if (!wasActive) {
+      const zone = this.zonesById.get(run.zoneId);
+      for (const buddyId of zone?.runWith ?? []) {
+        if (!this.zonesById.has(buddyId)) {
+          continue;
+        }
+        if (this.queue.some((q) => q.zoneId === buddyId)) {
+          continue;
+        }
+        if (this.isZoneBlockedCb?.(buddyId) === true) {
+          this.log?.info(
+            'Run-with buddy %s skipped: currently weather-blocked',
+            buddyId,
+          );
+          continue;
+        }
+        this.queue.push({
+          zoneId: buddyId,
+          durationMs: run.durationMs,
+          entryId: run.entryId,
+          enqueuedAt: run.enqueuedAt,
+        });
+      }
+    }
   }
 
-  private async finishRun(zoneId: string): Promise<void> {
+  /**
+   * Synchronous: removes the zone from the active set, fires-and-forgets the
+   * stopZone callback, and immediately processes the queue. Synchronous is
+   * important — if we awaited stopZone, another pending fake-timer could fire
+   * during the microtask, racing us before tryStartAll cancels its timer via
+   * a run-with extension.
+   */
+  private finishRun(zoneId: string): void {
     this.activeRuns.delete(zoneId);
-    try {
-      await this.stopZoneCb(zoneId);
-    } catch (err) {
+    void this.stopZoneCb(zoneId).catch((err: unknown) => {
       this.log?.error('stopZone(%s) failed: %s', zoneId, String(err));
-    }
+    });
     this.tryStartAll();
   }
 

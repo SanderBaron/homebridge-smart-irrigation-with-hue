@@ -156,6 +156,8 @@ function parseZones(raw: unknown): Zone[] {
   if (!Array.isArray(raw)) {
     return [];
   }
+  // First pass: build the list with id-only references retained; second pass
+  // filters runWith down to ids we actually know about (no dangling pointers).
   const out: Zone[] = [];
   const seenIds = new Set<string>();
   for (const item of raw) {
@@ -171,9 +173,9 @@ function parseZones(raw: unknown): Zone[] {
     seenIds.add(id);
     const type = oneOf(item['type'], VALID_ZONE_TYPES, 'other');
     const zone: Zone = { id, name, type, hueLightId };
-    const group = stringOrUndef(item['concurrencyGroup']);
-    if (group !== undefined && group.length > 0) {
-      zone.concurrencyGroup = group;
+    const runWith = parseStringArray(item['runWith']).filter((rid) => rid !== id);
+    if (runWith.length > 0) {
+      zone.runWith = runWith;
     }
     const wind = parseWindBlocking(item['windBlocking']);
     if (wind !== undefined) {
@@ -184,6 +186,17 @@ function parseZones(raw: unknown): Zone[] {
       zone.rainBlocking = rain;
     }
     out.push(zone);
+  }
+  // Second pass: drop runWith ids that don't exist among the parsed zones.
+  for (const zone of out) {
+    if (zone.runWith !== undefined) {
+      const filtered = zone.runWith.filter((rid) => seenIds.has(rid));
+      if (filtered.length === 0) {
+        delete zone.runWith;
+      } else {
+        zone.runWith = filtered;
+      }
+    }
   }
   return out;
 }

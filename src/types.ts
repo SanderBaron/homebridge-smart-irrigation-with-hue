@@ -92,11 +92,21 @@ export interface Zone {
   /** Hue light/socket id the bridge will toggle on/off. */
   hueLightId: string;
   /**
-   * Optional concurrency group. Zones sharing a group may run simultaneously
-   * during scheduled execution. Empty string or undefined means "standalone" —
-   * the zone always runs alone.
+   * Other zones that should automatically run alongside this one. When this
+   * zone is started (by the scheduler or by manual valve open), every zone
+   * id listed here is started too, for the same duration.
+   *
+   * Two zones are considered compatible (can run together) iff at least one
+   * of them lists the other in `runWith`. Zones whose `runWith` lists do not
+   * mention each other are serialised by the scheduler.
+   *
+   * Replaces the earlier `concurrencyGroup` string. The two models differ:
+   * groups are equivalence classes (everyone in group X can run with everyone
+   * else in group X), while `runWith` is a directed graph that can also
+   * express asymmetric relationships — e.g. a drip line that joins every
+   * sprinkler without those sprinklers joining each other.
    */
-  concurrencyGroup?: string;
+  runWith?: string[];
   /** Optional wind blocking. Absent or `enabled: false` means the zone never blocks on wind. */
   windBlocking?: WindBlockingConfig;
   /** Optional rain blocking. Absent or `enabled: false` means the zone never blocks on rain. */

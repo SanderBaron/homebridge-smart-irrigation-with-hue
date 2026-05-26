@@ -9,12 +9,14 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
+// Two zones that explicitly list each other as run-with buddies — they may
+// run simultaneously.
 const ZONE_LP_A: Zone = {
   id: 'lpA',
   name: 'Low-pressure A',
   type: 'dripLine',
   hueLightId: '1',
-  concurrencyGroup: 'lp',
+  runWith: ['lpB'],
 };
 
 const ZONE_LP_B: Zone = {
@@ -22,9 +24,10 @@ const ZONE_LP_B: Zone = {
   name: 'Low-pressure B',
   type: 'dripLine',
   hueLightId: '2',
-  concurrencyGroup: 'lp',
+  runWith: ['lpA'],
 };
 
+// Standalone — empty runWith, can only run alone.
 const ZONE_STANDALONE: Zone = {
   id: 'solo',
   name: 'Solo zone',
@@ -32,12 +35,35 @@ const ZONE_STANDALONE: Zone = {
   hueLightId: '3',
 };
 
+// Another standalone (also incompatible with lp* — does not list them).
 const ZONE_HP: Zone = {
   id: 'hp',
   name: 'High-pressure',
   type: 'sprinkler',
   hueLightId: '4',
-  concurrencyGroup: 'hp',
+};
+
+// Drip line that joins every sprinkler — the asymmetric case the runWith
+// model can express but a single concurrency group can't.
+const ZONE_DRIP: Zone = {
+  id: 'drip',
+  name: 'Drip line',
+  type: 'dripLine',
+  hueLightId: '5',
+};
+const ZONE_SPR_1: Zone = {
+  id: 'spr1',
+  name: 'Sprinkler 1',
+  type: 'sprinkler',
+  hueLightId: '6',
+  runWith: ['drip'],
+};
+const ZONE_SPR_2: Zone = {
+  id: 'spr2',
+  name: 'Sprinkler 2',
+  type: 'sprinkler',
+  hueLightId: '7',
+  runWith: ['drip'],
 };
 
 // 2026-05-26 is a Tuesday.
@@ -152,7 +178,7 @@ describe('Scheduler — day and time filtering', () => {
 });
 
 describe('Scheduler — concurrency', () => {
-  it('runs zones in the same group simultaneously', () => {
+  it('runs mutually-listed run-with buddies simultaneously', () => {
     jest.useFakeTimers();
     try {
       const { scheduler, startZone } = makeScheduler(TUESDAY_0800);
@@ -170,7 +196,7 @@ describe('Scheduler — concurrency', () => {
     }
   });
 
-  it('queues zones from different groups in the same entry', () => {
+  it('queues zones that do not list each other as run-with', () => {
     jest.useFakeTimers();
     try {
       const { scheduler, startZone, stopZone } = makeScheduler(TUESDAY_0800);
@@ -199,7 +225,7 @@ describe('Scheduler — concurrency', () => {
     }
   });
 
-  it('blocks a standalone zone from joining an active group', () => {
+  it('blocks a standalone zone from joining an active zone with no relationship', () => {
     jest.useFakeTimers();
     try {
       const { scheduler, startZone } = makeScheduler(TUESDAY_0800);
@@ -215,6 +241,60 @@ describe('Scheduler — concurrency', () => {
       expect(startZone).toHaveBeenCalledTimes(1);
       expect(scheduler.getActiveZones()).toEqual(['lpA']);
       expect(scheduler.getQueuedZones()).toEqual(['solo']);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("expands an entry with each zone's run-with buddies", () => {
+    jest.useFakeTimers();
+    try {
+      const { scheduler, startZone } = makeScheduler(TUESDAY_0800);
+      scheduler.setZones([ZONE_DRIP, ZONE_SPR_1]);
+      const entry: ScheduleEntry = { ...ENTRY_TUE_0800_LP, zoneIds: ['spr1'] };
+      scheduler.setEntries([entry]);
+      scheduler.setActive(true);
+      scheduler.tick();
+
+      // The entry only lists spr1, but spr1.runWith pulls in drip too.
+      expect(startZone).toHaveBeenCalledTimes(2);
+      expect(scheduler.getActiveZones().sort()).toEqual(['drip', 'spr1']);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('asymmetric drip-with-every-sprinkler case: serialises sprinklers, drip rides along', async () => {
+    jest.useFakeTimers();
+    try {
+      const { scheduler, stopZone } = makeScheduler(TUESDAY_0800);
+      scheduler.setZones([ZONE_DRIP, ZONE_SPR_1, ZONE_SPR_2]);
+      const e1: ScheduleEntry = {
+        ...ENTRY_TUE_0800_LP,
+        id: 'e1',
+        zoneIds: ['spr1'],
+        durationMin: 1,
+      };
+      const e2: ScheduleEntry = {
+        ...ENTRY_TUE_0800_LP,
+        id: 'e2',
+        zoneIds: ['spr2'],
+        durationMin: 1,
+      };
+      scheduler.setEntries([e1, e2]);
+      scheduler.setActive(true);
+      scheduler.tick();
+
+      // e1 starts: spr1 + drip running together. spr2 + drip from e2 both
+      // queue behind spr1 (drip can't double-start, spr2 conflicts with spr1).
+      expect(scheduler.getActiveZones().sort()).toEqual(['drip', 'spr1']);
+      expect(scheduler.getQueuedZones()).toContain('spr2');
+
+      // After spr1 + drip finish, spr2 + drip start.
+      await jest.advanceTimersByTimeAsync(60 * 1000);
+      expect(stopZone).toHaveBeenCalledWith('spr1');
+      expect(stopZone).toHaveBeenCalledWith('drip');
+      expect(scheduler.getActiveZones().sort()).toEqual(['drip', 'spr2']);
     } finally {
       jest.useRealTimers();
     }

@@ -68,7 +68,7 @@ describe('parseConfig — zones', () => {
     expect(result.config.zones[0]?.name).toBe('First');
   });
 
-  it('parses wind and rain blocking configs', () => {
+  it('parses wind, rain, and run-with relationships', () => {
     const result = parseConfig(
       asConfig({
         location: BASE_LOCATION,
@@ -78,7 +78,7 @@ describe('parseConfig — zones', () => {
             name: 'A',
             hueLightId: '1',
             type: 'sprinkler',
-            concurrencyGroup: 'lp',
+            runWith: ['z2', 'unknown', 'z1'],
             windBlocking: {
               enabled: true,
               blockedOctants: ['N', 'NE', 'invalid'],
@@ -86,6 +86,7 @@ describe('parseConfig — zones', () => {
             },
             rainBlocking: { enabled: true, past24hThresholdMm: 5, next12hThresholdMm: 2 },
           },
+          { id: 'z2', name: 'B', hueLightId: '2' },
         ],
       }),
     );
@@ -94,10 +95,25 @@ describe('parseConfig — zones', () => {
       return;
     }
     const z = result.config.zones[0];
-    expect(z?.concurrencyGroup).toBe('lp');
+    // Unknown zone id is filtered; self-reference is stripped.
+    expect(z?.runWith).toEqual(['z2']);
     expect(z?.windBlocking?.blockedOctants).toEqual(['N', 'NE']);
     expect(z?.windBlocking?.minimumWindSpeedMs).toBe(6);
     expect(z?.rainBlocking?.past24hThresholdMm).toBe(5);
+  });
+
+  it('drops empty runWith arrays so the field is undefined on simple zones', () => {
+    const result = parseConfig(
+      asConfig({
+        location: BASE_LOCATION,
+        zones: [{ id: 'z1', name: 'A', hueLightId: '1', runWith: [] }],
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.config.zones[0]?.runWith).toBeUndefined();
   });
 });
 

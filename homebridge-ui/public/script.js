@@ -164,6 +164,7 @@ function applyThemeFromHomebridge() {
 
 function mergeDefaults(cfg) {
   const base = defaultConfig();
+  const zones = Array.isArray(cfg.zones) ? cfg.zones.map(migrateZone) : [];
   return {
     ...base,
     ...cfg,
@@ -172,9 +173,24 @@ function mergeDefaults(cfg) {
     weather: { ...base.weather, ...(cfg.weather || {}) },
     override: { ...base.override, ...(cfg.override || {}) },
     pump: cfg.pump || undefined,
-    zones: Array.isArray(cfg.zones) ? cfg.zones : [],
+    zones,
     schedule: Array.isArray(cfg.schedule) ? cfg.schedule : [],
   };
+}
+
+/**
+ * Strip legacy fields and normalise the new shape. Plays the role of an
+ * in-place schema migration whenever the UI loads an older config.
+ */
+function migrateZone(zone) {
+  const clean = { ...zone };
+  if ('concurrencyGroup' in clean) {
+    delete clean.concurrencyGroup;
+  }
+  if (!Array.isArray(clean.runWith)) {
+    clean.runWith = [];
+  }
+  return clean;
 }
 
 // ============================================================ wiring
@@ -310,7 +326,7 @@ function makeNewZone() {
     name: 'New zone',
     type,
     hueLightId: '',
-    concurrencyGroup: '',
+    runWith: [],
     windBlocking: JSON.parse(JSON.stringify(defaults.wind)),
     rainBlocking: JSON.parse(JSON.stringify(defaults.rain)),
   };
@@ -359,14 +375,16 @@ function buildZoneCard(zone, idx) {
           </select>
         </label>
       </div>
-      <div class="form-grid two">
+      <div class="form-row">
         <label>Hue outlet
           <select data-field="hueLightId">${lightsOptions}</select>
         </label>
-        <label>Concurrency group
-          <input type="text" data-field="concurrencyGroup" value="${escapeHtml(zone.concurrencyGroup || '')}" placeholder="(leave blank for standalone)" />
-        </label>
       </div>
+      <fieldset>
+        <legend>Run alongside this zone</legend>
+        <p class="hint">When this zone starts (manually or via schedule), the zones you tick here also start for the same duration. Useful e.g. when a drip line should water on top of whichever sprinkler is running.</p>
+        <div class="check-list" data-runwith-list>${buildRunWithList(zone)}</div>
+      </fieldset>
       <fieldset>
         <legend>
           <label class="toggle"><input type="checkbox" data-field="windEnabled" ${zone.windBlocking.enabled ? 'checked' : ''} /> Wind blocking</label>
@@ -402,6 +420,9 @@ function buildZoneCard(zone, idx) {
   });
   card.querySelectorAll('[data-octant]').forEach((el) => {
     el.addEventListener('change', () => writeZoneOctants(idx));
+  });
+  card.querySelectorAll('[data-runwith]').forEach((el) => {
+    el.addEventListener('change', () => writeZoneRunWith(idx));
   });
   card.querySelector('[data-action="remove"]').addEventListener('click', () => {
     confirmModal(`Remove zone "${state.config.zones[idx].name}"?`).then((ok) => {
@@ -443,9 +464,6 @@ function writeZoneField(idx, el) {
     case 'hueLightId':
       z.hueLightId = String(val);
       break;
-    case 'concurrencyGroup':
-      z.concurrencyGroup = String(val);
-      break;
     case 'windEnabled':
       z.windBlocking.enabled = Boolean(val);
       break;
@@ -461,6 +479,29 @@ function writeZoneField(idx, el) {
     case 'rainNext':
       z.rainBlocking.next12hThresholdMm = Number(val);
       break;
+  }
+}
+
+function buildRunWithList(zone) {
+  const others = state.config.zones.filter((z) => z.id !== zone.id);
+  if (others.length === 0) {
+    return '<p class="muted">No other zones yet — add another zone to choose buddies.</p>';
+  }
+  return others
+    .map((other) => {
+      const checked = (zone.runWith || []).includes(other.id) ? 'checked' : '';
+      return `<label><input type="checkbox" data-runwith="${escapeHtml(other.id)}" ${checked} /> ${escapeHtml(other.name)}</label>`;
+    })
+    .join('');
+}
+
+function writeZoneRunWith(idx) {
+  const card = document.querySelectorAll('#zones-list .item-card')[idx];
+  const ids = [...card.querySelectorAll('[data-runwith]:checked')].map((el) => el.dataset.runwith);
+  if (ids.length > 0) {
+    state.config.zones[idx].runWith = ids;
+  } else {
+    delete state.config.zones[idx].runWith;
   }
 }
 
