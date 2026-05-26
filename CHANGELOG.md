@@ -46,3 +46,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Optional `isZoneBlocked` hook for the weather blocking engine (Phase 4) — blocked zones are skipped, not queued.
   - `stopAll` for shutdown hooks; deactivating the scheduler does not interrupt currently running zones.
 - 13 new tests; total suite now 135.
+- Config parser (`src/config.ts`): `parseConfig` turns the raw Homebridge `PlatformConfig` into a strictly-typed `SmartIrrigationConfig`, applies defaults, drops malformed zones/entries, validates HH:MM times, scopes pump zone ids to known zones, and silently drops OpenWeatherMap from `weather.sources` when no API key is provided.
+- TTL cache (`src/ttlCache.ts`): minimal one-value generic cache used by the platform to memoise the aggregated weather snapshot list.
+- Override manager (`src/overrideManager.ts`): per-zone wind/rain override state with auto-reset timers, `onChange` callback for HomeKit sync, timer-renew semantics when re-activated, and `clearAllSilent` for shutdown.
+- Accessory plan (`src/accessoryPlan.ts`): pure `computeValves` / `computeSwitches` projections from the parsed config — testable without Homebridge.
+- Platform accessory (`src/platformAccessory.ts`): single `Irrigation System` accessory with dynamic Valve sub-services per zone and dynamic Switch services for the schedule + per-zone wind/rain overrides. Wires HomeKit characteristic events to Hue, pump, scheduler, and override manager. Removes stale services when zones/entries disappear from config.
+- Platform orchestrator (`src/platform.ts`, rewritten from Phase 1 stub):
+  - Parses config, instantiates Hue client / weather cache / pump / scheduler / override manager, builds the accessory.
+  - Periodic timers: scheduler tick (30 s), Hue health check (configurable, default 60 s), weather refresh (configurable, default 10 min).
+  - `isZoneBlocked` projection consulted by the scheduler — combines blocking-engine verdict with manual overrides.
+  - Hue-offline detection closes every valve in plugin state and logs clearly.
+  - Tolerant of an incomplete config (missing Hue pairing) so the platform still loads while the user is configuring it.
+- 28 new tests (config parser, TTL cache, override manager, accessory plan) covering pure logic; total suite now 163. The accessory + platform wiring is verified manually in Phase 11.

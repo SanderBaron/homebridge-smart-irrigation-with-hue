@@ -1,0 +1,222 @@
+import { parseConfig } from '../src/config';
+import type { PlatformConfig } from 'homebridge';
+
+function asConfig(input: Record<string, unknown>): PlatformConfig {
+  return { platform: 'SmartIrrigation', ...input } as PlatformConfig;
+}
+
+const BASE_LOCATION = { latitude: 52.37, longitude: 4.89 };
+
+describe('parseConfig — basics', () => {
+  it('rejects a config missing latitude or longitude', () => {
+    const result = parseConfig(asConfig({}));
+    expect(result.ok).toBe(false);
+  });
+
+  it('parses a minimal valid config and applies defaults', () => {
+    const result = parseConfig(asConfig({ location: BASE_LOCATION }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.config.name).toBe('Smart Irrigation');
+    expect(result.config.zones).toEqual([]);
+    expect(result.config.schedule).toEqual([]);
+    expect(result.config.weather.cacheMinutes).toBe(10);
+    expect(result.config.weather.consensusStrategy).toBe('majority');
+    expect(result.config.override.autoResetMinutes).toBe(60);
+    expect(result.config.windUnit).toBe('m/s');
+    expect(result.config.pump).toBeUndefined();
+  });
+});
+
+describe('parseConfig — zones', () => {
+  it('drops zones missing required fields', () => {
+    const result = parseConfig(
+      asConfig({
+        location: BASE_LOCATION,
+        zones: [
+          { id: '', name: 'No id', hueLightId: '1' },
+          { id: 'z1', name: '', hueLightId: '1' },
+          { id: 'z1', name: 'No outlet', hueLightId: '' },
+          { id: 'z2', name: 'Good', hueLightId: '7' },
+        ],
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.config.zones.map((z) => z.id)).toEqual(['z2']);
+  });
+
+  it('deduplicates zone ids and keeps the first occurrence', () => {
+    const result = parseConfig(
+      asConfig({
+        location: BASE_LOCATION,
+        zones: [
+          { id: 'z1', name: 'First', hueLightId: '1' },
+          { id: 'z1', name: 'Dupe', hueLightId: '2' },
+        ],
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.config.zones).toHaveLength(1);
+    expect(result.config.zones[0]?.name).toBe('First');
+  });
+
+  it('parses wind and rain blocking configs', () => {
+    const result = parseConfig(
+      asConfig({
+        location: BASE_LOCATION,
+        zones: [
+          {
+            id: 'z1',
+            name: 'A',
+            hueLightId: '1',
+            type: 'sprinkler',
+            concurrencyGroup: 'lp',
+            windBlocking: {
+              enabled: true,
+              blockedOctants: ['N', 'NE', 'invalid'],
+              minimumWindSpeedMs: 6,
+            },
+            rainBlocking: { enabled: true, past24hThresholdMm: 5, next12hThresholdMm: 2 },
+          },
+        ],
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    const z = result.config.zones[0];
+    expect(z?.concurrencyGroup).toBe('lp');
+    expect(z?.windBlocking?.blockedOctants).toEqual(['N', 'NE']);
+    expect(z?.windBlocking?.minimumWindSpeedMs).toBe(6);
+    expect(z?.rainBlocking?.past24hThresholdMm).toBe(5);
+  });
+});
+
+describe('parseConfig — schedule', () => {
+  it('drops entries with invalid time, no days, or unknown zones', () => {
+    const result = parseConfig(
+      asConfig({
+        location: BASE_LOCATION,
+        zones: [{ id: 'z1', name: 'A', hueLightId: '1' }],
+        schedule: [
+          {
+            id: 'e1',
+            name: 'Bad time',
+            days: ['Mon'],
+            startTime: '08:99',
+            durationMin: 10,
+            zoneIds: ['z1'],
+          },
+          {
+            id: 'e2',
+            name: 'No days',
+            days: [],
+            startTime: '08:00',
+            durationMin: 10,
+            zoneIds: ['z1'],
+          },
+          {
+            id: 'e3',
+            name: 'Unknown zone',
+            days: ['Mon'],
+            startTime: '08:00',
+            durationMin: 10,
+            zoneIds: ['gone'],
+          },
+          {
+            id: 'e4',
+            name: 'Zero dur',
+            days: ['Mon'],
+            startTime: '08:00',
+            durationMin: 0,
+            zoneIds: ['z1'],
+          },
+          {
+            id: 'e5',
+            name: 'Good',
+            days: ['Mon', 'Wed'],
+            startTime: '08:00',
+            durationMin: 15,
+            zoneIds: ['z1'],
+          },
+        ],
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.config.schedule.map((e) => e.id)).toEqual(['e5']);
+  });
+});
+
+describe('parseConfig — pump', () => {
+  it('returns undefined when pump.enabled is false', () => {
+    const result = parseConfig(
+      asConfig({
+        location: BASE_LOCATION,
+        pump: { enabled: false, hueLightId: '9' },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.config.pump).toBeUndefined();
+  });
+
+  it('returns a typed pump with defaults and filters unknown zone ids', () => {
+    const result = parseConfig(
+      asConfig({
+        location: BASE_LOCATION,
+        zones: [{ id: 'z1', name: 'A', hueLightId: '1' }],
+        pump: { enabled: true, hueLightId: '9', zoneIds: ['z1', 'unknown'] },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.config.pump).toEqual({
+      enabled: true,
+      hueLightId: '9',
+      preRunSec: 3,
+      postRunSec: 5,
+      zoneIds: ['z1'],
+    });
+  });
+});
+
+describe('parseConfig — weather', () => {
+  it('drops openweathermap from sources when no API key provided', () => {
+    const result = parseConfig(
+      asConfig({
+        location: BASE_LOCATION,
+        weather: { sources: ['open-meteo', 'openweathermap'] },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.config.weather.sources).toEqual(['open-meteo']);
+  });
+
+  it('defaults to open-meteo + buienradar when no sources listed', () => {
+    const result = parseConfig(asConfig({ location: BASE_LOCATION }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.config.weather.sources).toEqual(['open-meteo', 'buienradar']);
+  });
+});
