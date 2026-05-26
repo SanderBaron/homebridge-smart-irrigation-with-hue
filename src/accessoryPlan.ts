@@ -5,6 +5,7 @@ export const GLOBAL_OVERRIDE_ZONE_ID = '__all__';
 
 export type SwitchKind =
   | 'schedule'
+  | 'run-now'
   | 'wind-override'
   | 'rain-override'
   | 'wind-override-global'
@@ -48,6 +49,11 @@ export function computeSwitches(config: SmartIrrigationConfig): SwitchPlan[] {
       subtype: 'switch-schedule',
       displayName: 'Activate Schedule',
       kind: 'schedule',
+    });
+    out.push({
+      subtype: 'switch-run-now',
+      displayName: 'Run Schedule Now',
+      kind: 'run-now',
     });
   }
 

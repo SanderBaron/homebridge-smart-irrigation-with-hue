@@ -38,7 +38,7 @@ describe('computeSwitches', () => {
     expect(result.filter((s) => s.kind === 'schedule')).toEqual([]);
   });
 
-  it('adds the schedule switch when at least one entry exists', () => {
+  it('adds the schedule switch and a "Run Schedule Now" switch when at least one entry exists', () => {
     const config = makeConfig({
       schedule: [
         {
@@ -52,10 +52,15 @@ describe('computeSwitches', () => {
       ],
     });
     const result = computeSwitches(config);
-    expect(result[0]).toEqual({
+    expect(result.find((s) => s.kind === 'schedule')).toEqual({
       subtype: 'switch-schedule',
       displayName: 'Activate Schedule',
       kind: 'schedule',
+    });
+    expect(result.find((s) => s.kind === 'run-now')).toEqual({
+      subtype: 'switch-run-now',
+      displayName: 'Run Schedule Now',
+      kind: 'run-now',
     });
   });
 
@@ -134,7 +139,12 @@ describe('computeSwitches', () => {
       ],
     });
     const result = computeSwitches(config);
-    expect(result.map((s) => s.kind)).toEqual(['schedule', 'wind-override', 'rain-override']);
+    expect(result.map((s) => s.kind)).toEqual([
+      'schedule',
+      'run-now',
+      'wind-override',
+      'rain-override',
+    ]);
   });
 });
 

@@ -1,9 +1,5 @@
-import type {
-  CharacteristicValue,
-  PlatformAccessory,
-  Service,
-  WithUUID,
-} from 'homebridge';
+import { Perms } from 'homebridge';
+import type { CharacteristicValue, PlatformAccessory, Service, WithUUID } from 'homebridge';
 import type { Characteristic } from '@homebridge/hap-nodejs';
 
 import {
@@ -112,16 +108,31 @@ export class SmartIrrigationAccessory {
     const svc =
       this.accessory.getService(this.platform.Service.IrrigationSystem) ??
       this.accessory.addService(this.platform.Service.IrrigationSystem);
-    svc.setCharacteristic(this.platform.Characteristic.Name, this.deps.config.name);
-    svc.setCharacteristic(
+    this.applyDisplayName(svc, this.deps.config.name);
+
+    // The IrrigationSystem service exposes Active / InUse / ProgramMode. In
+    // Apple Home's "one tile" view these render as separate ghost tiles, and
+    // because we don't actually let the user *turn the irrigation system
+    // itself* on or off (individual valves and the schedule switch handle
+    // that), tapping them used to snap back. Locking the perms to
+    // PAIRED_READ + NOTIFY tells Apple Home these are read-only signals and
+    // it suppresses the interactive controls.
+    for (const Char of [
+      this.platform.Characteristic.Active,
+      this.platform.Characteristic.InUse,
+      this.platform.Characteristic.ProgramMode,
+    ]) {
+      svc.getCharacteristic(Char).setProps({ perms: [Perms.PAIRED_READ, Perms.NOTIFY] });
+    }
+    svc.updateCharacteristic(
       this.platform.Characteristic.Active,
       this.platform.Characteristic.Active.ACTIVE,
     );
-    svc.setCharacteristic(
+    svc.updateCharacteristic(
       this.platform.Characteristic.ProgramMode,
       this.platform.Characteristic.ProgramMode.NO_PROGRAM_SCHEDULED,
     );
-    svc.setCharacteristic(
+    svc.updateCharacteristic(
       this.platform.Characteristic.InUse,
       this.platform.Characteristic.InUse.NOT_IN_USE,
     );
@@ -286,6 +297,19 @@ export class SmartIrrigationAccessory {
           this.deps.scheduler.setActive(on);
           this.platform.log.info('Schedule %s', on ? 'activated' : 'deactivated');
           break;
+        case 'run-now':
+          if (on) {
+            this.platform.log.info('Run Schedule Now requested');
+            this.deps.scheduler.runAllEntriesNow();
+            // Momentary: snap the switch back off after a short blink so the
+            // user gets visual feedback without it staying "on" while the
+            // sequence runs in the background.
+            setTimeout(() => {
+              const svc = this.switchServices.get(plan.subtype);
+              svc?.updateCharacteristic(this.platform.Characteristic.On, false);
+            }, 1500);
+          }
+          break;
         case 'wind-override':
           if (plan.zoneId !== undefined) {
             this.deps.overrideManager.setOverride(plan.zoneId, 'wind', on);
@@ -441,6 +465,8 @@ export class SmartIrrigationAccessory {
     switch (plan.kind) {
       case 'schedule':
         return this.deps.scheduler.isActive();
+      case 'run-now':
+        return false; // momentary — always reads as off
       case 'wind-override':
         return plan.zoneId !== undefined
           ? this.deps.overrideManager.isOverridden(plan.zoneId, 'wind')

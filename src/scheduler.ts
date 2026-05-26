@@ -202,6 +202,24 @@ export class Scheduler {
     return Object.fromEntries(this.firedToday);
   }
 
+  /**
+   * Run every configured schedule entry right now, regardless of the day or
+   * start time. Intended for the "Run Schedule Now" switch in Apple Home.
+   * Respects weather blocking, the run-with model, and concurrency just like
+   * a normal scheduled fire.
+   */
+  public runAllEntriesNow(): void {
+    const now = this.nowFn();
+    if (this.entries.length === 0) {
+      this.log?.info('Run-now requested but no schedule entries are configured.');
+      return;
+    }
+    this.log?.info('Run-now triggered for %d schedule entries', this.entries.length);
+    for (const entry of this.entries) {
+      this.fireEntry(entry, now);
+    }
+  }
+
   /** Zones currently watering (started, not yet finished). */
   public getActiveZones(): string[] {
     return [...this.activeRuns.keys()];
