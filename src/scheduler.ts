@@ -41,6 +41,23 @@ interface PendingZoneRun {
 }
 
 /**
+ * Bookkeeping for an entry currently working its way through its `steps[]`
+ * sequence. The scheduler enqueues exactly one step at a time (the current
+ * one); when its zone's `finishRun` fires, we advance the step index and
+ * enqueue the next one, looping per `entry.repeat`.
+ */
+interface ActiveSequence {
+  entryId: string;
+  entry: ScheduleEntry;
+  /** 0-indexed repeat count. Entry done when this reaches `entry.repeat`. */
+  repeatIndex: number;
+  /** 0-indexed step within the current repeat. */
+  stepIndex: number;
+  /** The zoneId currently running for this sequence's step (cleared on advance). */
+  runningZoneId: string | undefined;
+}
+
+/**
  * Schedule engine.
  *
  * Tick-driven: the platform calls {@link tick} on a short interval (e.g. every
@@ -68,6 +85,7 @@ export class Scheduler {
   private readonly firedToday = new Map<string, string>();
   private readonly queue: PendingZoneRun[] = [];
   private readonly activeRuns = new Map<string, NodeJS.Timeout>();
+  private readonly activeSequences: ActiveSequence[] = [];
 
   private readonly startZoneCb: (zoneId: string, durationMs: number) => Promise<void>;
   private readonly stopZoneCb: (zoneId: string) => Promise<void>;
@@ -200,6 +218,7 @@ export class Scheduler {
    */
   public async stopAll(): Promise<void> {
     this.queue.length = 0;
+    this.activeSequences.length = 0;
     const zoneIds = [...this.activeRuns.keys()];
     for (const id of zoneIds) {
       const timer = this.activeRuns.get(id);
@@ -212,29 +231,79 @@ export class Scheduler {
   }
 
   private fireEntry(entry: ScheduleEntry, now: Date): void {
+    if (entry.steps.length === 0) {
+      return;
+    }
     this.log?.info(
-      'Schedule entry "%s" firing at %s for %d zone(s)',
+      'Schedule entry "%s" firing at %s — %d step(s) × %d repeat(s)',
       entry.name,
       formatHHMM(now),
-      entry.zoneIds.length,
+      entry.steps.length,
+      entry.repeat,
     );
-    const durationMs = entry.durationMin * 60 * 1000;
-    for (const zoneId of entry.zoneIds) {
-      if (!this.zonesById.has(zoneId)) {
-        this.log?.warn('Entry "%s" references unknown zone %s — skipping', entry.name, zoneId);
+    const seq: ActiveSequence = {
+      entryId: entry.id,
+      entry,
+      repeatIndex: 0,
+      stepIndex: 0,
+      runningZoneId: undefined,
+    };
+    this.activeSequences.push(seq);
+    this.advanceSequence(seq, now.getTime());
+  }
+
+  /**
+   * Enqueue the sequence's current step's zone, or finish the sequence if
+   * every repeat is done. Called when an entry first fires and after each
+   * step's zone completes.
+   */
+  private advanceSequence(seq: ActiveSequence, enqueuedAt: number): void {
+    while (seq.repeatIndex < seq.entry.repeat) {
+      if (seq.stepIndex >= seq.entry.steps.length) {
+        seq.repeatIndex += 1;
+        seq.stepIndex = 0;
         continue;
       }
-      if (this.isZoneBlockedCb?.(zoneId) === true) {
-        this.log?.info('Zone %s skipped: currently weather-blocked', zoneId);
+      const step = seq.entry.steps[seq.stepIndex];
+      if (step === undefined) {
+        seq.stepIndex += 1;
         continue;
       }
-      this.queue.push({ zoneId, durationMs, entryId: entry.id, enqueuedAt: now.getTime() });
+      if (!this.zonesById.has(step.zoneId)) {
+        this.log?.warn(
+          'Entry "%s" step %d references unknown zone %s — skipping',
+          seq.entry.name,
+          seq.stepIndex,
+          step.zoneId,
+        );
+        seq.stepIndex += 1;
+        continue;
+      }
+      if (this.isZoneBlockedCb?.(step.zoneId) === true) {
+        this.log?.info(
+          'Entry "%s" step %d zone %s skipped: weather-blocked',
+          seq.entry.name,
+          seq.stepIndex,
+          step.zoneId,
+        );
+        seq.stepIndex += 1;
+        continue;
+      }
+      seq.runningZoneId = step.zoneId;
+      this.queue.push({
+        zoneId: step.zoneId,
+        durationMs: step.durationMin * 60 * 1000,
+        entryId: seq.entryId,
+        enqueuedAt,
+      });
+      this.tryStartAll();
+      return;
     }
-    this.tryStartAll();
-    for (const run of this.queue) {
-      if (run.entryId === entry.id) {
-        this.log?.info('Zone %s queued behind active zone(s) due to concurrency rules', run.zoneId);
-      }
+    // All repeats exhausted — remove sequence.
+    this.log?.info('Schedule entry "%s" sequence complete', seq.entry.name);
+    const idx = this.activeSequences.indexOf(seq);
+    if (idx !== -1) {
+      this.activeSequences.splice(idx, 1);
     }
   }
 
@@ -344,16 +413,28 @@ export class Scheduler {
 
   /**
    * Synchronous: removes the zone from the active set, fires-and-forgets the
-   * stopZone callback, and immediately processes the queue. Synchronous is
-   * important — if we awaited stopZone, another pending fake-timer could fire
-   * during the microtask, racing us before tryStartAll cancels its timer via
-   * a run-with extension.
+   * stopZone callback, advances any sequence whose current step matches this
+   * zone, and immediately processes the queue. Synchronous is important — if
+   * we awaited stopZone, another pending fake-timer could fire during the
+   * microtask, racing us before tryStartAll cancels its timer via a run-with
+   * extension.
    */
   private finishRun(zoneId: string): void {
     this.activeRuns.delete(zoneId);
     void this.stopZoneCb(zoneId).catch((err: unknown) => {
       this.log?.error('stopZone(%s) failed: %s', zoneId, String(err));
     });
+
+    // Advance any sequence whose current step just finished. Run-with buddies
+    // that finish do not advance the sequence — only the step's own zone does.
+    const now = this.nowFn().getTime();
+    const advancing = this.activeSequences.filter((s) => s.runningZoneId === zoneId);
+    for (const seq of advancing) {
+      seq.runningZoneId = undefined;
+      seq.stepIndex += 1;
+      this.advanceSequence(seq, now);
+    }
+
     this.tryStartAll();
   }
 

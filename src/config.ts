@@ -6,6 +6,7 @@ import type {
   PumpConfig,
   RainBlockingConfig,
   ScheduleEntry,
+  ScheduleStep,
   WeekDay,
   WindBlockingConfig,
   WindUnit,
@@ -237,13 +238,11 @@ function parseSchedule(raw: unknown, knownZoneIds: Set<string>): ScheduleEntry[]
     const id = stringOr(item['id'], '').trim();
     const name = stringOr(item['name'], '').trim();
     const startTime = stringOr(item['startTime'], '').trim();
-    const durationMin = numberOr(item['durationMin'], 0);
     if (
       id === '' ||
       name === '' ||
       seenIds.has(id) ||
-      !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(startTime) ||
-      durationMin <= 0
+      !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(startTime)
     ) {
       continue;
     }
@@ -253,14 +252,46 @@ function parseSchedule(raw: unknown, knownZoneIds: Set<string>): ScheduleEntry[]
     if (days.length === 0) {
       continue;
     }
-    const zoneIds = parseStringArray(item['zoneIds']).filter((z) => knownZoneIds.has(z));
-    if (zoneIds.length === 0) {
+    const steps = parseSteps(item, knownZoneIds);
+    if (steps.length === 0) {
       continue;
     }
+    const repeat = Math.max(1, Math.floor(numberOr(item['repeat'], 1)));
     seenIds.add(id);
-    out.push({ id, name, days, startTime, durationMin, zoneIds });
+    out.push({ id, name, days, startTime, steps, repeat });
   }
   return out;
+}
+
+/**
+ * Parse the steps array — or, if the entry is in the legacy
+ * `zoneIds: string[] + durationMin: number` shape, migrate to one step per
+ * zone with the old duration. Invalid steps are dropped silently.
+ */
+function parseSteps(item: Record<string, unknown>, knownZoneIds: Set<string>): ScheduleStep[] {
+  const raw = item['steps'];
+  if (Array.isArray(raw)) {
+    const out: ScheduleStep[] = [];
+    for (const stepRaw of raw) {
+      if (!isRecord(stepRaw)) {
+        continue;
+      }
+      const zoneId = stringOr(stepRaw['zoneId'], '').trim();
+      const durationMin = numberOr(stepRaw['durationMin'], 0);
+      if (zoneId === '' || !knownZoneIds.has(zoneId) || durationMin <= 0) {
+        continue;
+      }
+      out.push({ zoneId, durationMin });
+    }
+    return out;
+  }
+  // Legacy shape — migrate.
+  const legacyDuration = numberOr(item['durationMin'], 0);
+  if (legacyDuration <= 0) {
+    return [];
+  }
+  const legacyZones = parseStringArray(item['zoneIds']).filter((z) => knownZoneIds.has(z));
+  return legacyZones.map((zoneId) => ({ zoneId, durationMin: legacyDuration }));
 }
 
 function parsePump(raw: unknown, knownZoneIds: Set<string>): PumpConfig | undefined {

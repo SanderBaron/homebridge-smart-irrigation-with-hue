@@ -117,7 +117,126 @@ describe('parseConfig — zones', () => {
   });
 });
 
-describe('parseConfig — schedule', () => {
+describe('parseConfig — schedule (new shape)', () => {
+  it('parses an entry with explicit steps + repeat', () => {
+    const result = parseConfig(
+      asConfig({
+        location: BASE_LOCATION,
+        zones: [
+          { id: 'z1', name: 'A', hueLightId: '1' },
+          { id: 'z2', name: 'B', hueLightId: '2' },
+        ],
+        schedule: [
+          {
+            id: 'e1',
+            name: 'Morning',
+            days: ['Mon', 'Wed'],
+            startTime: '08:00',
+            steps: [
+              { zoneId: 'z1', durationMin: 15 },
+              { zoneId: 'z2', durationMin: 20 },
+            ],
+            repeat: 2,
+          },
+        ],
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    const e = result.config.schedule[0];
+    expect(e?.steps).toEqual([
+      { zoneId: 'z1', durationMin: 15 },
+      { zoneId: 'z2', durationMin: 20 },
+    ]);
+    expect(e?.repeat).toBe(2);
+  });
+
+  it('migrates legacy zoneIds + durationMin into one step per zone', () => {
+    const result = parseConfig(
+      asConfig({
+        location: BASE_LOCATION,
+        zones: [
+          { id: 'z1', name: 'A', hueLightId: '1' },
+          { id: 'z2', name: 'B', hueLightId: '2' },
+        ],
+        schedule: [
+          {
+            id: 'legacy',
+            name: 'Legacy entry',
+            days: ['Mon'],
+            startTime: '08:00',
+            durationMin: 12,
+            zoneIds: ['z1', 'z2'],
+          },
+        ],
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.config.schedule[0]?.steps).toEqual([
+      { zoneId: 'z1', durationMin: 12 },
+      { zoneId: 'z2', durationMin: 12 },
+    ]);
+    expect(result.config.schedule[0]?.repeat).toBe(1);
+  });
+
+  it('drops steps whose zoneId is unknown or whose duration is zero', () => {
+    const result = parseConfig(
+      asConfig({
+        location: BASE_LOCATION,
+        zones: [{ id: 'z1', name: 'A', hueLightId: '1' }],
+        schedule: [
+          {
+            id: 'e1',
+            name: 'Mixed',
+            days: ['Mon'],
+            startTime: '08:00',
+            steps: [
+              { zoneId: 'z1', durationMin: 10 },
+              { zoneId: 'gone', durationMin: 5 },
+              { zoneId: 'z1', durationMin: 0 },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.config.schedule[0]?.steps).toEqual([{ zoneId: 'z1', durationMin: 10 }]);
+  });
+
+  it('clamps repeat to minimum 1 (truncating fractional values)', () => {
+    const result = parseConfig(
+      asConfig({
+        location: BASE_LOCATION,
+        zones: [{ id: 'z1', name: 'A', hueLightId: '1' }],
+        schedule: [
+          {
+            id: 'e1',
+            name: 'r',
+            days: ['Mon'],
+            startTime: '08:00',
+            steps: [{ zoneId: 'z1', durationMin: 5 }],
+            repeat: 2.7,
+          },
+        ],
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.config.schedule[0]?.repeat).toBe(2);
+  });
+});
+
+describe('parseConfig — schedule (validation)', () => {
   it('drops entries with invalid time, no days, or unknown zones', () => {
     const result = parseConfig(
       asConfig({

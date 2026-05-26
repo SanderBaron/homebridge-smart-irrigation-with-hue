@@ -165,6 +165,7 @@ function applyThemeFromHomebridge() {
 function mergeDefaults(cfg) {
   const base = defaultConfig();
   const zones = Array.isArray(cfg.zones) ? cfg.zones.map(migrateZone) : [];
+  const schedule = Array.isArray(cfg.schedule) ? cfg.schedule.map(migrateEntry) : [];
   return {
     ...base,
     ...cfg,
@@ -174,7 +175,7 @@ function mergeDefaults(cfg) {
     override: { ...base.override, ...(cfg.override || {}) },
     pump: cfg.pump || undefined,
     zones,
-    schedule: Array.isArray(cfg.schedule) ? cfg.schedule : [],
+    schedule,
   };
 }
 
@@ -553,14 +554,42 @@ function writeZoneOctants(idx) {
 // ============================================================ schedule
 
 function makeNewEntry() {
+  const firstZone = state.config.zones[0];
+  const seedZoneId = firstZone ? firstZone.id : '';
   return {
     id: 'entry-' + Math.random().toString(36).slice(2, 10),
     name: 'New entry',
     days: ['Mon', 'Wed', 'Fri'],
     startTime: '08:00',
-    durationMin: 10,
-    zoneIds: [],
+    steps: seedZoneId !== '' ? [{ zoneId: seedZoneId, durationMin: 10 }] : [],
+    repeat: 1,
   };
+}
+
+/**
+ * Migrate legacy { zoneIds, durationMin } entries to the new
+ * { steps, repeat } shape on load. Same migration logic as the server-side
+ * parser, kept in the UI so an old config opens cleanly in the form.
+ */
+function migrateEntry(entry) {
+  if (!entry || typeof entry !== 'object') {
+    return entry;
+  }
+  if (Array.isArray(entry.steps)) {
+    if (typeof entry.repeat !== 'number' || entry.repeat < 1) {
+      entry.repeat = 1;
+    }
+    return entry;
+  }
+  const out = { ...entry };
+  const legacyDuration =
+    typeof out.durationMin === 'number' && out.durationMin > 0 ? out.durationMin : 10;
+  const legacyZones = Array.isArray(out.zoneIds) ? out.zoneIds : [];
+  out.steps = legacyZones.map((zoneId) => ({ zoneId, durationMin: legacyDuration }));
+  out.repeat = 1;
+  delete out.zoneIds;
+  delete out.durationMin;
+  return out;
 }
 
 function renderSchedule() {
@@ -585,12 +614,12 @@ function buildEntryCard(entry, idx) {
     return `<label><input type="checkbox" data-day="${d}" ${checked} /> ${d}</label>`;
   }).join('');
 
-  const zonesChecks = state.config.zones
-    .map(
-      (z) =>
-        `<label><input type="checkbox" data-zone="${z.id}" ${entry.zoneIds.includes(z.id) ? 'checked' : ''} /> ${escapeHtml(z.name)}</label>`,
-    )
-    .join('');
+  const stepsHtml = buildStepsList(entry);
+  const totalMin = (entry.steps || []).reduce((sum, s) => sum + (Number(s.durationMin) || 0), 0);
+  const totalSummary =
+    entry.steps.length === 0
+      ? 'No steps yet.'
+      : `${entry.steps.length} step${entry.steps.length === 1 ? '' : 's'} × ${entry.repeat || 1} repeat${(entry.repeat || 1) === 1 ? '' : 's'} = ${totalMin * (entry.repeat || 1)} min total`;
 
   card.innerHTML = `
     <div class="item-head">
@@ -606,15 +635,23 @@ function buildEntryCard(entry, idx) {
           <input type="text" data-field="startTime" value="${escapeHtml(entry.startTime)}" pattern="^([01][0-9]|2[0-3]):[0-5][0-9]$" />
         </label>
       </div>
-      <div class="form-grid two">
-        <label>Duration (minutes)
-          <input type="number" data-field="durationMin" min="1" max="240" value="${entry.durationMin}" />
-        </label>
-      </div>
       <span>Days</span>
       <div class="check-list" data-days>${days}</div>
-      <span>Zones</span>
-      <div class="check-list" data-zones>${zonesChecks || '<p class="muted">Define a zone first.</p>'}</div>
+      <fieldset>
+        <legend>Steps (ordered)</legend>
+        <p class="hint">Each step waters one zone for the given minutes, then the next step starts. Zones in the "Run alongside this zone" list of the step's zone water in parallel automatically — no need to list them as separate steps.</p>
+        <div class="steps-list" data-steps-list>${stepsHtml}</div>
+        <button type="button" class="secondary small" data-action="add-step">Add step</button>
+      </fieldset>
+      <div class="form-grid two">
+        <label>Repeat
+          <input type="number" data-field="repeat" min="1" max="12" step="1" value="${entry.repeat || 1}" />
+        </label>
+        <div>
+          <span>Estimated total</span>
+          <p class="muted" data-total-summary>${escapeHtml(totalSummary)}</p>
+        </div>
+      </div>
     </div>
   `;
 
@@ -625,8 +662,14 @@ function buildEntryCard(entry, idx) {
   card.querySelectorAll('[data-day]').forEach((el) => {
     el.addEventListener('change', () => writeEntryDays(idx));
   });
-  card.querySelectorAll('[data-zone]').forEach((el) => {
-    el.addEventListener('change', () => writeEntryZones(idx));
+  wireStepHandlers(card, idx);
+  card.querySelector('[data-action="add-step"]').addEventListener('click', () => {
+    const firstZone = state.config.zones[0];
+    state.config.schedule[idx].steps.push({
+      zoneId: firstZone ? firstZone.id : '',
+      durationMin: 10,
+    });
+    renderSchedule();
   });
   card.querySelector('[data-action="remove"]').addEventListener('click', () => {
     confirmModal(`Remove schedule entry "${state.config.schedule[idx].name}"?`).then((ok) => {
@@ -639,11 +682,76 @@ function buildEntryCard(entry, idx) {
   return card;
 }
 
+function buildStepsList(entry) {
+  if (!Array.isArray(entry.steps) || entry.steps.length === 0) {
+    return '<p class="muted">No steps yet — click "Add step".</p>';
+  }
+  const zoneOptions = (selectedId) => {
+    if (state.config.zones.length === 0) {
+      return '<option value="">(no zones defined)</option>';
+    }
+    return state.config.zones
+      .map(
+        (z) =>
+          `<option value="${escapeHtml(z.id)}"${z.id === selectedId ? ' selected' : ''}>${escapeHtml(z.name)}</option>`,
+      )
+      .join('');
+  };
+  return entry.steps
+    .map(
+      (step, stepIdx) => `
+        <div class="step-row" data-step-index="${stepIdx}">
+          <span class="step-number">${stepIdx + 1}.</span>
+          <select data-step-field="zoneId">${zoneOptions(step.zoneId)}</select>
+          <input type="number" data-step-field="durationMin" min="1" max="240" step="1" value="${Number(step.durationMin) || 10}" />
+          <span class="step-unit">min</span>
+          <button type="button" class="danger small" data-step-action="remove">×</button>
+        </div>`,
+    )
+    .join('');
+}
+
+function wireStepHandlers(card, idx) {
+  card.querySelectorAll('.step-row').forEach((row) => {
+    const stepIdx = Number(row.dataset.stepIndex);
+    row.querySelectorAll('[data-step-field]').forEach((el) => {
+      el.addEventListener('change', () => writeStepField(idx, stepIdx, el));
+      el.addEventListener('input', () => writeStepField(idx, stepIdx, el));
+    });
+    const removeBtn = row.querySelector('[data-step-action="remove"]');
+    if (removeBtn !== null) {
+      removeBtn.addEventListener('click', () => {
+        state.config.schedule[idx].steps.splice(stepIdx, 1);
+        renderSchedule();
+      });
+    }
+  });
+}
+
+function writeStepField(entryIdx, stepIdx, el) {
+  const step = state.config.schedule[entryIdx].steps[stepIdx];
+  if (!step) return;
+  const f = el.dataset.stepField;
+  if (f === 'zoneId') {
+    step.zoneId = String(el.value);
+  } else if (f === 'durationMin') {
+    step.durationMin = Math.max(1, Math.floor(Number(el.value) || 1));
+  }
+  // Re-render the total summary inline without redrawing the whole card.
+  const card = el.closest('.item-card');
+  const summary = card && card.querySelector('[data-total-summary]');
+  if (summary) {
+    const entry = state.config.schedule[entryIdx];
+    const totalMin = entry.steps.reduce((sum, s) => sum + (Number(s.durationMin) || 0), 0);
+    summary.textContent = `${entry.steps.length} step${entry.steps.length === 1 ? '' : 's'} × ${entry.repeat || 1} repeat${(entry.repeat || 1) === 1 ? '' : 's'} = ${totalMin * (entry.repeat || 1)} min total`;
+  }
+}
+
 function writeEntryField(idx, el) {
   const e = state.config.schedule[idx];
   const f = el.dataset.field;
-  if (f === 'durationMin') {
-    e.durationMin = Number(el.value);
+  if (f === 'repeat') {
+    e.repeat = Math.max(1, Math.floor(Number(el.value) || 1));
   } else if (f === 'name' || f === 'startTime') {
     e[f] = String(el.value);
   }
@@ -653,13 +761,6 @@ function writeEntryDays(idx) {
   const card = document.querySelectorAll('#schedule-list .item-card')[idx];
   state.config.schedule[idx].days = [...card.querySelectorAll('[data-day]:checked')].map(
     (el) => el.dataset.day,
-  );
-}
-
-function writeEntryZones(idx) {
-  const card = document.querySelectorAll('#schedule-list .item-card')[idx];
-  state.config.schedule[idx].zoneIds = [...card.querySelectorAll('[data-zone]:checked')].map(
-    (el) => el.dataset.zone,
   );
 }
 

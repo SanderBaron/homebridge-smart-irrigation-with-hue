@@ -211,7 +211,7 @@
         "description": "Watering entries. The \"Activate Schedule\" switch in Apple Home controls whether these fire.",
         "items": {
           "type": "object",
-          "required": ["id", "name", "days", "startTime", "durationMin", "zoneIds"],
+          "required": ["id", "name", "days", "startTime", "steps"],
           "properties": {
             "id": {
               "title": "Entry id",
@@ -239,17 +239,35 @@
               "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
               "description": "24-hour HH:MM, e.g. 08:00."
             },
-            "durationMin": {
-              "title": "Duration (minutes)",
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 240
-            },
-            "zoneIds": {
-              "title": "Zones",
+            "steps": {
+              "title": "Steps",
               "type": "array",
               "minItems": 1,
-              "items": { "type": "string" }
+              "description": "Ordered list of zones to water, each for its own duration. Run-with buddies attached to a step's zone water alongside it automatically.",
+              "items": {
+                "type": "object",
+                "required": ["zoneId", "durationMin"],
+                "properties": {
+                  "zoneId": {
+                    "title": "Zone",
+                    "type": "string"
+                  },
+                  "durationMin": {
+                    "title": "Duration (minutes)",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 240
+                  }
+                }
+              }
+            },
+            "repeat": {
+              "title": "Repeat",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12,
+              "default": 1,
+              "description": "How many times the sequence runs in total. 1 = run once, 2 = run twice, etc."
             }
           }
         }

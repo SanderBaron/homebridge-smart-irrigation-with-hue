@@ -473,6 +473,42 @@ button:disabled {
   color: var(--fg);
 }
 
+.steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.step-row {
+  display: grid;
+  grid-template-columns: 28px 1fr 90px auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.step-row .step-number {
+  color: var(--muted);
+  font-weight: 600;
+  text-align: right;
+}
+
+.step-row .step-unit {
+  color: var(--muted);
+}
+
+.step-row .danger.small {
+  padding: 2px 8px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+@media (max-width: 540px) {
+  .step-row {
+    grid-template-columns: 24px 1fr 70px auto auto;
+  }
+}
+
 .item-card .octant-row label {
   flex-direction: row;
   align-items: center;

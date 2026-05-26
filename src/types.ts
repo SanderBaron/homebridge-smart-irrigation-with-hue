@@ -45,7 +45,22 @@ export interface RainBlockingConfig {
  */
 export type WeekDay = 'Sun' | 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat';
 
-/** A single entry in the user's watering schedule. */
+/** One ordered step inside a schedule entry: water one zone for `durationMin` minutes. */
+export interface ScheduleStep {
+  /** Zone to water during this step (by `Zone.id`). */
+  zoneId: string;
+  /** Duration of this step in minutes. Must be greater than zero. */
+  durationMin: number;
+}
+
+/**
+ * A single entry in the user's watering schedule.
+ *
+ * Steps run sequentially: step 0 fires first, when its zone finishes step 1
+ * starts, and so on. After the last step the whole sequence repeats `repeat`
+ * times in total (so `repeat: 1` means "run once"). Run-with buddies attached
+ * to a step's zone water alongside that step automatically.
+ */
 export interface ScheduleEntry {
   /** Stable identifier, persisted across restarts. */
   id: string;
@@ -55,10 +70,10 @@ export interface ScheduleEntry {
   days: WeekDay[];
   /** Start time in 24-hour `HH:MM` format. */
   startTime: string;
-  /** Duration per zone in minutes. Every zone listed gets watered for this long. */
-  durationMin: number;
-  /** Zones included in this entry, by Zone.id. */
-  zoneIds: string[];
+  /** Ordered list of steps to execute. Must contain at least one step. */
+  steps: ScheduleStep[];
+  /** Total times to run the sequence. Default 1 (no repeat). Minimum 1. */
+  repeat: number;
 }
 
 /**

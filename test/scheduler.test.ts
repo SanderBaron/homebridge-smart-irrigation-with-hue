@@ -96,14 +96,29 @@ function makeScheduler(now: Date): {
   };
 }
 
-const ENTRY_TUE_0800_LP: ScheduleEntry = {
-  id: 'e1',
-  name: 'Morning low-pressure',
-  days: ['Tue'],
-  startTime: '08:00',
-  durationMin: 10,
-  zoneIds: ['lpA', 'lpB'],
-};
+/**
+ * Helper: build a schedule entry from the old (parallel zones, single duration)
+ * spec. Multiple zones become sequential steps in the new model — most tests
+ * keep working with this shim because the new compatibility rules + run-with
+ * model already encode whether they actually run in parallel or sequentially.
+ */
+function makeEntry(
+  zoneIds: string[],
+  durationMin = 10,
+  overrides: Partial<ScheduleEntry> = {},
+): ScheduleEntry {
+  return {
+    id: 'e1',
+    name: 'Morning low-pressure',
+    days: ['Tue'],
+    startTime: '08:00',
+    steps: zoneIds.map((zoneId) => ({ zoneId, durationMin })),
+    repeat: 1,
+    ...overrides,
+  };
+}
+
+const ENTRY_TUE_0800_LP: ScheduleEntry = makeEntry(['lpA', 'lpB'], 10);
 
 describe('Scheduler — day and time filtering', () => {
   it('does not fire when inactive', () => {
@@ -196,67 +211,16 @@ describe('Scheduler — concurrency', () => {
     }
   });
 
-  it('queues zones that do not list each other as run-with', () => {
-    jest.useFakeTimers();
-    try {
-      const { scheduler, startZone, stopZone } = makeScheduler(TUESDAY_0800);
-      scheduler.setZones([ZONE_LP_A, ZONE_HP]);
-      const mixed: ScheduleEntry = {
-        ...ENTRY_TUE_0800_LP,
-        zoneIds: ['lpA', 'hp'],
-      };
-      scheduler.setEntries([mixed]);
-      scheduler.setActive(true);
-      scheduler.tick();
-
-      // First zone in entry order starts; second is queued behind it.
-      expect(startZone).toHaveBeenCalledTimes(1);
-      expect(scheduler.getActiveZones()).toEqual(['lpA']);
-      expect(scheduler.getQueuedZones()).toEqual(['hp']);
-
-      // After lpA's duration elapses, hp should pick up.
-      jest.advanceTimersByTime(10 * 60 * 1000);
-      return Promise.resolve().then(() => {
-        expect(stopZone).toHaveBeenCalledWith('lpA');
-        expect(startZone).toHaveBeenCalledWith('hp', 10 * 60 * 1000);
-      });
-    } finally {
-      jest.useRealTimers();
-    }
-  });
-
-  it('blocks a standalone zone from joining an active zone with no relationship', () => {
-    jest.useFakeTimers();
-    try {
-      const { scheduler, startZone } = makeScheduler(TUESDAY_0800);
-      scheduler.setZones([ZONE_LP_A, ZONE_STANDALONE]);
-      const entry: ScheduleEntry = {
-        ...ENTRY_TUE_0800_LP,
-        zoneIds: ['lpA', 'solo'],
-      };
-      scheduler.setEntries([entry]);
-      scheduler.setActive(true);
-      scheduler.tick();
-
-      expect(startZone).toHaveBeenCalledTimes(1);
-      expect(scheduler.getActiveZones()).toEqual(['lpA']);
-      expect(scheduler.getQueuedZones()).toEqual(['solo']);
-    } finally {
-      jest.useRealTimers();
-    }
-  });
-
-  it("expands an entry with each zone's run-with buddies", () => {
+  it('pulls a run-with buddy in alongside the active step', () => {
     jest.useFakeTimers();
     try {
       const { scheduler, startZone } = makeScheduler(TUESDAY_0800);
       scheduler.setZones([ZONE_DRIP, ZONE_SPR_1]);
-      const entry: ScheduleEntry = { ...ENTRY_TUE_0800_LP, zoneIds: ['spr1'] };
-      scheduler.setEntries([entry]);
+      scheduler.setEntries([makeEntry(['spr1'], 10)]);
       scheduler.setActive(true);
       scheduler.tick();
 
-      // The entry only lists spr1, but spr1.runWith pulls in drip too.
+      // The entry has only one step (spr1), but spr1.runWith pulls in drip.
       expect(startZone).toHaveBeenCalledTimes(2);
       expect(scheduler.getActiveZones().sort()).toEqual(['drip', 'spr1']);
     } finally {
@@ -264,56 +228,99 @@ describe('Scheduler — concurrency', () => {
     }
   });
 
-  it('asymmetric drip-with-every-sprinkler case: serialises sprinklers, drip rides along', async () => {
+  it('serialises two overlapping entries with incompatible step zones', async () => {
+    jest.useFakeTimers();
+    try {
+      const { scheduler, startZone } = makeScheduler(TUESDAY_0800);
+      scheduler.setZones([ZONE_STANDALONE, ZONE_HP]);
+      const e1 = makeEntry(['solo'], 1, { id: 'e1' });
+      const e2 = makeEntry(['hp'], 1, { id: 'e2' });
+      scheduler.setEntries([e1, e2]);
+      scheduler.setActive(true);
+      scheduler.tick();
+
+      // e1's step zone starts; e2's step zone is queued (no run-with).
+      expect(scheduler.getActiveZones()).toEqual(['solo']);
+      expect(scheduler.getQueuedZones()).toEqual(['hp']);
+
+      // After solo finishes, hp picks up.
+      await jest.advanceTimersByTimeAsync(60 * 1000);
+      expect(startZone).toHaveBeenCalledWith('hp', 60 * 1000);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+
+describe('Scheduler — sequences and repeats', () => {
+  it('runs steps in order: step 1 only starts after step 0 finishes', async () => {
+    jest.useFakeTimers();
+    try {
+      const { scheduler, startZone, stopZone } = makeScheduler(TUESDAY_0800);
+      scheduler.setZones([ZONE_STANDALONE, ZONE_HP]);
+      scheduler.setEntries([makeEntry(['solo', 'hp'], 1)]);
+      scheduler.setActive(true);
+      scheduler.tick();
+
+      // Only step 0 (solo) is active. hp is NOT queued — it's a future step.
+      expect(scheduler.getActiveZones()).toEqual(['solo']);
+      expect(scheduler.getQueuedZones()).toEqual([]);
+      expect(startZone).toHaveBeenCalledWith('solo', 60 * 1000);
+      expect(startZone).not.toHaveBeenCalledWith('hp', expect.anything());
+
+      // After step 0's duration, step 1 (hp) starts.
+      await jest.advanceTimersByTimeAsync(60 * 1000);
+      expect(stopZone).toHaveBeenCalledWith('solo');
+      expect(startZone).toHaveBeenCalledWith('hp', 60 * 1000);
+      expect(scheduler.getActiveZones()).toEqual(['hp']);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('repeats the sequence the configured number of times', async () => {
+    jest.useFakeTimers();
+    try {
+      const { scheduler, startZone } = makeScheduler(TUESDAY_0800);
+      scheduler.setZones([ZONE_STANDALONE]);
+      scheduler.setEntries([makeEntry(['solo'], 1, { repeat: 3 })]);
+      scheduler.setActive(true);
+      scheduler.tick();
+
+      // First pass starts immediately.
+      expect(startZone).toHaveBeenCalledTimes(1);
+
+      // Advance through the next two repeats.
+      await jest.advanceTimersByTimeAsync(60 * 1000);
+      expect(startZone).toHaveBeenCalledTimes(2);
+      await jest.advanceTimersByTimeAsync(60 * 1000);
+      expect(startZone).toHaveBeenCalledTimes(3);
+
+      // Final repeat finishes; no more starts.
+      await jest.advanceTimersByTimeAsync(60 * 1000);
+      expect(startZone).toHaveBeenCalledTimes(3);
+      expect(scheduler.getActiveZones()).toEqual([]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('asymmetric drip-with-every-sprinkler: each step pulls drip in', async () => {
     jest.useFakeTimers();
     try {
       const { scheduler, stopZone } = makeScheduler(TUESDAY_0800);
       scheduler.setZones([ZONE_DRIP, ZONE_SPR_1, ZONE_SPR_2]);
-      const e1: ScheduleEntry = {
-        ...ENTRY_TUE_0800_LP,
-        id: 'e1',
-        zoneIds: ['spr1'],
-        durationMin: 1,
-      };
-      const e2: ScheduleEntry = {
-        ...ENTRY_TUE_0800_LP,
-        id: 'e2',
-        zoneIds: ['spr2'],
-        durationMin: 1,
-      };
-      scheduler.setEntries([e1, e2]);
+      scheduler.setEntries([makeEntry(['spr1', 'spr2'], 1)]);
       scheduler.setActive(true);
       scheduler.tick();
 
-      // e1 starts: spr1 + drip running together. spr2 + drip from e2 both
-      // queue behind spr1 (drip can't double-start, spr2 conflicts with spr1).
+      // Step 0: spr1 active + drip pulled via runWith.
       expect(scheduler.getActiveZones().sort()).toEqual(['drip', 'spr1']);
-      expect(scheduler.getQueuedZones()).toContain('spr2');
 
-      // After spr1 + drip finish, spr2 + drip start.
+      // After step 0, advance to step 1 (spr2). Drip stays via timer extension.
       await jest.advanceTimersByTimeAsync(60 * 1000);
       expect(stopZone).toHaveBeenCalledWith('spr1');
-      expect(stopZone).toHaveBeenCalledWith('drip');
       expect(scheduler.getActiveZones().sort()).toEqual(['drip', 'spr2']);
-    } finally {
-      jest.useRealTimers();
-    }
-  });
-
-  it('starts compatible zones from a later entry that overlaps in time', () => {
-    jest.useFakeTimers();
-    try {
-      const { scheduler, startZone } = makeScheduler(TUESDAY_0800);
-      scheduler.setZones([ZONE_LP_A, ZONE_LP_B]);
-      const e1: ScheduleEntry = { ...ENTRY_TUE_0800_LP, zoneIds: ['lpA'] };
-      const e2: ScheduleEntry = { ...ENTRY_TUE_0800_LP, id: 'e2', zoneIds: ['lpB'] };
-      scheduler.setEntries([e1, e2]);
-      scheduler.setActive(true);
-      scheduler.tick();
-
-      // Both compatible — both running.
-      expect(scheduler.getActiveZones().sort()).toEqual(['lpA', 'lpB']);
-      expect(startZone).toHaveBeenCalledTimes(2);
     } finally {
       jest.useRealTimers();
     }
@@ -326,7 +333,7 @@ describe('Scheduler — duration timer', () => {
     try {
       const { scheduler, stopZone } = makeScheduler(TUESDAY_0800);
       scheduler.setZones([ZONE_LP_A]);
-      scheduler.setEntries([{ ...ENTRY_TUE_0800_LP, zoneIds: ['lpA'], durationMin: 1 }]);
+      scheduler.setEntries([makeEntry(['lpA'], 1)]);
       scheduler.setActive(true);
       scheduler.tick();
 
@@ -373,7 +380,7 @@ describe('Scheduler — unknown zone reference', () => {
     try {
       const { scheduler, startZone } = makeScheduler(TUESDAY_0800);
       scheduler.setZones([ZONE_LP_A]);
-      scheduler.setEntries([{ ...ENTRY_TUE_0800_LP, zoneIds: ['lpA', 'gone'] }]);
+      scheduler.setEntries([makeEntry(['lpA', 'gone'])]);
       scheduler.setActive(true);
       scheduler.tick();
       expect(startZone).toHaveBeenCalledTimes(1);
@@ -427,7 +434,7 @@ describe('Scheduler — stopAll', () => {
     try {
       const { scheduler, stopZone } = makeScheduler(TUESDAY_0800);
       scheduler.setZones([ZONE_LP_A, ZONE_HP]);
-      scheduler.setEntries([{ ...ENTRY_TUE_0800_LP, zoneIds: ['lpA', 'hp'] }]);
+      scheduler.setEntries([makeEntry(['lpA', 'hp'])]);
       scheduler.setActive(true);
       scheduler.tick();
       expect(scheduler.getActiveZones()).toEqual(['lpA']);
