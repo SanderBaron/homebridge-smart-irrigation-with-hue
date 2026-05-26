@@ -39,6 +39,15 @@ export class TtlCache<T> {
     this.entry = undefined;
   }
 
+  /**
+   * Seed the cache with a known value (e.g. restored from persistent state).
+   * The TTL is reset from the current clock — useful for stale state that you
+   * want to use briefly but soon refresh.
+   */
+  public set(value: T): void {
+    this.entry = { value, expiresAt: this.nowFn() + this.ttlMs };
+  }
+
   /** Update the TTL window; takes effect on the next compute. */
   public setTtl(ttlMs: number): void {
     this.ttlMs = ttlMs;

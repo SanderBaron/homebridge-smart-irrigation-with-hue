@@ -117,4 +117,35 @@ export class OverrideManager {
       expiresAt,
     }));
   }
+
+  /**
+   * Restore overrides from persisted state. Each entry schedules an auto-reset
+   * timer for whatever time is left until its original `expiresAt`. Overrides
+   * whose expiry is already in the past are dropped (no-op) — they would
+   * fire instantly otherwise. `onChange` is not invoked during restore: this
+   * is silent rehydration, not a user-triggered flip.
+   */
+  public restore(
+    items: Array<{ zoneId: string; kind: OverrideKind; expiresAt: number }>,
+    now: number = Date.now(),
+  ): void {
+    this.clearAllSilent();
+    for (const item of items) {
+      const remainingMs = item.expiresAt - now;
+      if (remainingMs <= 0) {
+        continue;
+      }
+      const timer = setTimeout(() => {
+        this.active.delete(key(item.zoneId, item.kind));
+        this.log?.info('%s override for %s auto-reset (restored)', item.kind, item.zoneId);
+        this.onChange?.(item.zoneId, item.kind, false);
+      }, remainingMs);
+      this.active.set(key(item.zoneId, item.kind), {
+        zoneId: item.zoneId,
+        kind: item.kind,
+        timer,
+        expiresAt: item.expiresAt,
+      });
+    }
+  }
 }

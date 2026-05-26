@@ -22,6 +22,12 @@ export interface SchedulerOptions {
    * The platform layer wires this to the blocking engine.
    */
   isZoneBlocked?: (zoneId: string) => boolean;
+  /**
+   * Optional notifier fired when {@link setActive} changes state or
+   * {@link tick} fires an entry. Lets the platform persist state without
+   * polling.
+   */
+  onStateChange?: () => void;
   /** Injectable clock; defaults to `() => new Date()`. */
   nowFn?: () => Date;
   log?: Logging;
@@ -66,6 +72,7 @@ export class Scheduler {
   private readonly startZoneCb: (zoneId: string, durationMs: number) => Promise<void>;
   private readonly stopZoneCb: (zoneId: string) => Promise<void>;
   private readonly isZoneBlockedCb: ((zoneId: string) => boolean) | undefined;
+  private readonly onStateChangeCb: (() => void) | undefined;
   private readonly nowFn: () => Date;
   private readonly log: Logging | undefined;
 
@@ -73,6 +80,7 @@ export class Scheduler {
     this.startZoneCb = options.startZone;
     this.stopZoneCb = options.stopZone;
     this.isZoneBlockedCb = options.isZoneBlocked;
+    this.onStateChangeCb = options.onStateChange;
     this.nowFn = options.nowFn ?? ((): Date => new Date());
     this.log = options.log;
   }
@@ -110,8 +118,10 @@ export class Scheduler {
         'Scheduler activated; %d entries already past for today',
         this.firedToday.size,
       );
+      this.onStateChangeCb?.();
     } else if (!active && wasActive) {
       this.log?.info('Scheduler deactivated; running zones will finish their duration');
+      this.onStateChangeCb?.();
     }
   }
 
@@ -150,7 +160,28 @@ export class Scheduler {
       }
       this.firedToday.set(entry.id, dateKey);
       this.fireEntry(entry, now);
+      this.onStateChangeCb?.();
     }
+  }
+
+  /**
+   * Restore the per-entry "fired today" map from persistent state. Stale
+   * entries (date keys older than today) are dropped so they don't suppress
+   * legitimate firings.
+   */
+  public restoreFiredToday(map: Record<string, string>, now: Date = this.nowFn()): void {
+    const today = formatDateKey(now);
+    this.firedToday.clear();
+    for (const [entryId, dateKey] of Object.entries(map)) {
+      if (dateKey === today) {
+        this.firedToday.set(entryId, dateKey);
+      }
+    }
+  }
+
+  /** Snapshot the fired-today map for persistence. */
+  public getFiredTodaySnapshot(): Record<string, string> {
+    return Object.fromEntries(this.firedToday);
   }
 
   /** Zones currently watering (started, not yet finished). */

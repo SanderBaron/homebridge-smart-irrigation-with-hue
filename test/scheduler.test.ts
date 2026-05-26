@@ -304,6 +304,43 @@ describe('Scheduler — unknown zone reference', () => {
   });
 });
 
+describe('Scheduler — restoreFiredToday', () => {
+  it('keeps entries whose date matches today and drops stale ones', () => {
+    const { scheduler, startZone } = makeScheduler(TUESDAY_0800);
+    scheduler.setZones([ZONE_LP_A, ZONE_LP_B]);
+    scheduler.setEntries([ENTRY_TUE_0800_LP]);
+    scheduler.restoreFiredToday({ e1: '2026-05-26', stale: '2026-05-20' }, TUESDAY_0800);
+    scheduler.setActive(true);
+    scheduler.tick();
+    // Entry e1 was marked fired-today, so it must not re-fire even though
+    // the clock matches its start time.
+    expect(startZone).not.toHaveBeenCalled();
+    expect(scheduler.getFiredTodaySnapshot()).toEqual({ e1: '2026-05-26' });
+  });
+});
+
+describe('Scheduler — onStateChange', () => {
+  it('fires when setActive flips and when an entry tick fires', () => {
+    const onStateChange = jest.fn();
+    const startZone = jest.fn().mockResolvedValue(undefined);
+    const stopZone = jest.fn().mockResolvedValue(undefined);
+    const scheduler = new Scheduler({
+      startZone,
+      stopZone,
+      onStateChange,
+      nowFn: () => TUESDAY_0800,
+    });
+    scheduler.setZones([ZONE_LP_A, ZONE_LP_B]);
+    scheduler.setEntries([ENTRY_TUE_0800_LP]);
+    scheduler.setActive(true);
+    expect(onStateChange).toHaveBeenCalledTimes(1);
+    scheduler.tick();
+    expect(onStateChange).toHaveBeenCalledTimes(2);
+    scheduler.setActive(false);
+    expect(onStateChange).toHaveBeenCalledTimes(3);
+  });
+});
+
 describe('Scheduler — stopAll', () => {
   it('clears queue and stops running zones', async () => {
     jest.useFakeTimers();

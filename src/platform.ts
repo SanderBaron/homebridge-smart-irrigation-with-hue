@@ -16,6 +16,7 @@ import { PumpOrchestrator } from './pumpOrchestrator';
 import { Scheduler } from './scheduler';
 import { SmartIrrigationAccessory } from './platformAccessory';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
+import { defaultState, StateStore, type PersistentState } from './state';
 import { TtlCache } from './ttlCache';
 import { fetchBuienradar } from './weather/buienradar';
 import { fetchOpenMeteo } from './weather/openMeteo';
@@ -59,6 +60,9 @@ export class SmartIrrigationPlatform implements DynamicPlatformPlugin {
   private accessoryBuilder: SmartIrrigationAccessory | undefined;
   private hueOnline = false;
   private readonly intervalTimers: NodeJS.Timeout[] = [];
+  private stateStore: StateStore | undefined;
+  private persistentState: PersistentState = defaultState();
+  private savePending: Promise<void> = Promise.resolve();
 
   public constructor(
     public readonly log: Logging,
@@ -71,10 +75,10 @@ export class SmartIrrigationPlatform implements DynamicPlatformPlugin {
     this.log.info('Initializing %s platform', PLATFORM_NAME);
 
     this.api.on('didFinishLaunching', () => {
-      this.bootstrap();
+      void this.bootstrap();
     });
     this.api.on('shutdown', () => {
-      this.shutdown();
+      void this.shutdown();
     });
   }
 
@@ -85,7 +89,7 @@ export class SmartIrrigationPlatform implements DynamicPlatformPlugin {
 
   // ---------------- bootstrap ----------------
 
-  private bootstrap(): void {
+  private async bootstrap(): Promise<void> {
     const result = parseConfig(this.config);
     if (!result.ok) {
       this.log.error(
@@ -95,6 +99,19 @@ export class SmartIrrigationPlatform implements DynamicPlatformPlugin {
       return;
     }
     this.parsedConfig = result.config;
+
+    this.stateStore = new StateStore({
+      storageDir: this.api.user.storagePath(),
+      log: this.log,
+    });
+    this.persistentState = await this.stateStore.load();
+    this.log.debug(
+      'Loaded persistent state from %s (savedAt=%s, %d overrides, %d snapshots)',
+      this.stateStore.path(),
+      new Date(this.persistentState.savedAt).toISOString(),
+      this.persistentState.overrides.length,
+      this.persistentState.weatherSnapshots.length,
+    );
 
     const hueReady = result.config.hue.bridgeIp !== '' && result.config.hue.apiKey !== '';
     if (!hueReady) {
@@ -138,18 +155,29 @@ export class SmartIrrigationPlatform implements DynamicPlatformPlugin {
         await this.accessoryBuilder?.stopZoneFromSchedule(zoneId);
       },
       isZoneBlocked: (zoneId) => this.isZoneBlocked(zoneId),
+      onStateChange: () => this.schedulePersist(),
       log: this.log,
     });
     this.scheduler.setZones(result.config.zones);
     this.scheduler.setEntries(result.config.schedule);
+    this.scheduler.restoreFiredToday(this.persistentState.schedulerFiredToday);
+    if (this.persistentState.scheduleActive) {
+      this.scheduler.setActive(true);
+    }
 
     this.overrideManager = new OverrideManager({
       autoResetMinutes: result.config.override.autoResetMinutes,
       onChange: (zoneId, kind, active) => {
         this.accessoryBuilder?.syncOverrideSwitch(zoneId, kind, active);
+        this.schedulePersist();
       },
       log: this.log,
     });
+    this.overrideManager.restore(this.persistentState.overrides);
+
+    if (this.persistentState.weatherSnapshots.length > 0) {
+      this.weatherCache.set(this.persistentState.weatherSnapshots);
+    }
 
     this.buildOrRestoreAccessory(result.config);
     this.startPeriodicTimers();
@@ -222,7 +250,12 @@ export class SmartIrrigationPlatform implements DynamicPlatformPlugin {
       return;
     }
     try {
+      const before = this.weatherCache.peek();
       await this.weatherCache.getOrCompute(async () => this.fetchAllSources());
+      const after = this.weatherCache.peek();
+      if (after !== undefined && after !== before) {
+        this.schedulePersist();
+      }
     } catch (err) {
       this.log.warn('Weather refresh failed: %s', String(err));
     }
@@ -309,17 +342,53 @@ export class SmartIrrigationPlatform implements DynamicPlatformPlugin {
     }
   }
 
+  // ---------------- persistence ----------------
+
+  /**
+   * Capture current state from every subsystem and serialise to disk. Calls
+   * are serialised through `savePending` so concurrent change events never
+   * race on the temp file. Errors are logged by {@link StateStore}, not
+   * thrown.
+   */
+  private schedulePersist(): void {
+    if (this.stateStore === undefined) {
+      return;
+    }
+    this.savePending = this.savePending.then(() => this.persistNow());
+  }
+
+  private async persistNow(): Promise<void> {
+    if (this.stateStore === undefined) {
+      return;
+    }
+    const snapshot: PersistentState = {
+      ...this.persistentState,
+      scheduleActive: this.scheduler?.isActive() ?? false,
+      schedulerFiredToday: this.scheduler?.getFiredTodaySnapshot() ?? {},
+      overrides: this.overrideManager?.listActive() ?? [],
+      weatherSnapshots: this.weatherCache?.peek() ?? [],
+    };
+    this.persistentState = snapshot;
+    await this.stateStore.save(snapshot);
+  }
+
   // ---------------- shutdown ----------------
 
-  private shutdown(): void {
+  private async shutdown(): Promise<void> {
     this.log.info('%s shutting down', PLATFORM_NAME);
     for (const t of this.intervalTimers) {
       clearInterval(t);
     }
     this.intervalTimers.length = 0;
-    this.overrideManager?.clearAllSilent();
     void this.pump?.forceStop();
     void this.scheduler?.stopAll();
     void this.accessoryBuilder?.closeAllValves('shutdown');
+
+    // Persist a final snapshot before clearing overrides — the in-memory
+    // listActive() reflects what we want to restore on next launch.
+    this.schedulePersist();
+    await this.savePending;
+
+    this.overrideManager?.clearAllSilent();
   }
 }

@@ -68,6 +68,44 @@ describe('OverrideManager', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  describe('restore', () => {
+    it('rehydrates overrides without firing onChange', () => {
+      jest.useFakeTimers();
+      const onChange = jest.fn();
+      const mgr = new OverrideManager({ autoResetMinutes: 60, onChange });
+      const now = Date.now();
+      mgr.restore(
+        [
+          { zoneId: 'z1', kind: 'wind', expiresAt: now + 10 * 60 * 1000 },
+          { zoneId: 'z2', kind: 'rain', expiresAt: now + 5 * 60 * 1000 },
+        ],
+        now,
+      );
+      expect(mgr.isOverridden('z1', 'wind')).toBe(true);
+      expect(mgr.isOverridden('z2', 'rain')).toBe(true);
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('drops expired overrides', () => {
+      jest.useFakeTimers();
+      const mgr = new OverrideManager({ autoResetMinutes: 60 });
+      const now = Date.now();
+      mgr.restore([{ zoneId: 'z1', kind: 'wind', expiresAt: now - 1000 }], now);
+      expect(mgr.isOverridden('z1', 'wind')).toBe(false);
+    });
+
+    it('reschedules auto-reset for the remaining time', () => {
+      jest.useFakeTimers();
+      const onChange = jest.fn();
+      const mgr = new OverrideManager({ autoResetMinutes: 60, onChange });
+      const now = Date.now();
+      mgr.restore([{ zoneId: 'z1', kind: 'rain', expiresAt: now + 5 * 60 * 1000 }], now);
+      jest.advanceTimersByTime(5 * 60 * 1000);
+      expect(mgr.isOverridden('z1', 'rain')).toBe(false);
+      expect(onChange).toHaveBeenCalledWith('z1', 'rain', false);
+    });
+  });
+
   it('listActive surfaces zone, kind, and expiresAt', () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date(2026, 0, 1, 12, 0, 0));

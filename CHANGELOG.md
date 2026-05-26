@@ -58,3 +58,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Hue-offline detection closes every valve in plugin state and logs clearly.
   - Tolerant of an incomplete config (missing Hue pairing) so the platform still loads while the user is configuring it.
 - 28 new tests (config parser, TTL cache, override manager, accessory plan) covering pure logic; total suite now 163. The accessory + platform wiring is verified manually in Phase 11.
+- Persistent state (`src/state.ts`): single JSON file at `<homebridge-storage>/weather-smart-irrigation-state.json`. Atomic writes via temp+rename, tolerant load (missing file / malformed JSON / version mismatch all fall back to defaults), versioned schema for forward migrations, injectable filesystem for tests.
+- Persisted fields: `scheduleActive`, `schedulerFiredToday` (per-entry date keys), per-zone wind/rain `overrides` (with original `expiresAt`), and the last `weatherSnapshots` so blocking decisions immediately after restart aren't running blind.
+- Restore hooks: `Scheduler.restoreFiredToday` / `getFiredTodaySnapshot`, `OverrideManager.restore` (re-arms timers for the remaining time, drops already-expired entries, no `onChange` fired during rehydration), `TtlCache.set` to seed restored snapshots.
+- Scheduler emits `onStateChange` when `setActive` flips or a `tick` fires an entry, so the platform persists state without polling.
+- Platform persistence: load on bootstrap, save on schedule toggle / override change / weather refresh, save once more on shutdown (awaited so the file lands before Node exits). Saves are serialised through a promise chain to avoid concurrent temp-file writes.
+- 13 new tests (StateStore load/save with malformed-file fallback, OverrideManager.restore semantics, Scheduler restoreFiredToday + onStateChange); total suite now 176.
