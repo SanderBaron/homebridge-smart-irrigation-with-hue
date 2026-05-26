@@ -1,0 +1,477 @@
+/* ------------------------------------------------------------------ *
+ * Smart Irrigation — Homebridge custom UI styles.
+ *
+ * Vanilla CSS, dark-mode aware via prefers-color-scheme. The Homebridge UI
+ * loads this inside an iframe; the parent provides no framework CSS.
+ * ------------------------------------------------------------------ */
+
+:root {
+  --bg: #f4f5f7;
+  --card-bg: #ffffff;
+  --fg: #1a1a1a;
+  --muted: #6b7280;
+  --border: #e1e4e8;
+  --primary: #007aff;
+  --primary-hover: #0062cc;
+  --danger: #d33;
+  --danger-hover: #b32424;
+  --success: #2ea043;
+  --warning: #d97706;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117;
+    --card-bg: #161b22;
+    --fg: #e6edf3;
+    --muted: #8b949e;
+    --border: #30363d;
+    --primary: #2f81f7;
+    --primary-hover: #4a9fff;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    Oxygen,
+    Ubuntu,
+    Cantarell,
+    sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  line-height: 1.5;
+  font-size: 14px;
+}
+
+.container {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px 20px 120px;
+}
+
+header h1 {
+  margin: 0 0 4px;
+  font-size: 24px;
+}
+
+header .subtitle {
+  margin: 0 0 24px;
+  color: var(--muted);
+}
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow);
+}
+
+.card h2 {
+  margin: 0 0 8px;
+  font-size: 17px;
+}
+
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 4px 0 12px;
+}
+
+/* ---------------- form rows ---------------- */
+
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+}
+
+.form-row > label {
+  font-weight: 500;
+}
+
+.form-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.form-grid.two {
+  grid-template-columns: 1fr 1fr;
+}
+
+@media (max-width: 600px) {
+  .form-grid.two {
+    grid-template-columns: 1fr;
+  }
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+input[type='text'],
+input[type='number'],
+select {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card-bg);
+  color: var(--fg);
+  font-size: 14px;
+  width: 100%;
+  font-family: inherit;
+}
+
+input[readonly] {
+  background: var(--bg);
+  color: var(--muted);
+}
+
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(47, 129, 247, 0.2);
+}
+
+input.invalid {
+  border-color: var(--danger);
+}
+
+.input-with-button {
+  display: flex;
+  gap: 8px;
+}
+
+.input-with-button input {
+  flex: 1;
+}
+
+/* ---------------- buttons ---------------- */
+
+button {
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  background: var(--card-bg);
+  color: var(--fg);
+  font-family: inherit;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+
+button:hover {
+  border-color: var(--primary);
+}
+
+button.primary {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+button.primary:hover {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+button.danger {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+}
+
+button.danger:hover {
+  background: var(--danger-hover);
+  border-color: var(--danger-hover);
+}
+
+button.secondary {
+  background: transparent;
+}
+
+button.small {
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+button.large {
+  padding: 10px 22px;
+  font-size: 15px;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ---------------- status dot ---------------- */
+
+.status-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  background: var(--muted);
+}
+
+.status-online {
+  background: var(--success);
+}
+
+.status-offline {
+  background: var(--danger);
+}
+
+.status-unknown {
+  background: var(--muted);
+}
+
+.status-pending {
+  background: var(--warning);
+}
+
+/* ---------------- discovery list ---------------- */
+
+.discovery-results {
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.discovery-results .result {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.discovery-results .result:last-child {
+  border-bottom: none;
+}
+
+/* ---------------- toggle ---------------- */
+
+.toggle {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.toggle input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  cursor: pointer;
+}
+
+/* ---------------- check list ---------------- */
+
+.check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.check-list label {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
+}
+
+.check-list input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+/* ---------------- dynamic list ---------------- */
+
+.dynamic-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.dynamic-list .empty {
+  color: var(--muted);
+  font-style: italic;
+  margin: 8px 0;
+}
+
+.item-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px;
+  background: var(--bg);
+}
+
+.item-card .item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.item-card .item-title {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.item-card .item-body {
+  display: grid;
+  gap: 12px;
+}
+
+.item-card .octant-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+@media (max-width: 480px) {
+  .item-card .octant-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ---------------- action bar (sticky footer) ---------------- */
+
+.action-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--card-bg);
+  border-top: 1px solid var(--border);
+  padding: 12px 20px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.06);
+  z-index: 50;
+}
+
+.save-feedback {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.save-feedback.success {
+  color: var(--success);
+}
+
+.save-feedback.error {
+  color: var(--danger);
+}
+
+/* ---------------- modal ---------------- */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal-content {
+  background: var(--card-bg);
+  border-radius: 8px;
+  padding: 20px;
+  max-width: 420px;
+  width: 90%;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.modal-content p {
+  margin: 0 0 16px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ---------------- helpers ---------------- */
+
+.hidden {
+  display: none !important;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.hue-lights {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.hue-lights .light-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 4px;
+}
+
+.hue-lights .empty {
+  color: var(--muted);
+  font-style: italic;
+  margin: 0;
+}

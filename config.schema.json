@@ -2,7 +2,8 @@
   "pluginAlias": "SmartIrrigation",
   "pluginType": "platform",
   "singular": true,
-  "headerDisplay": "Weather-aware irrigation platform driving Philips Hue smart sockets. The full configuration UI is under construction — this scaffold only loads the platform.",
+  "customUi": true,
+  "headerDisplay": "Weather-aware irrigation platform driving Philips Hue smart sockets.",
   "footerDisplay": "See the [README](https://github.com/SanderBaron/homebridge-weather-smart-irrigation#readme) for details.",
   "schema": {
     "type": "object",

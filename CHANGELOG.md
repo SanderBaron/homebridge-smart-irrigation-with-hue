@@ -64,3 +64,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scheduler emits `onStateChange` when `setActive` flips or a `tick` fires an entry, so the platform persists state without polling.
 - Platform persistence: load on bootstrap, save on schedule toggle / override change / weather refresh, save once more on shutdown (awaited so the file lands before Node exits). Saves are serialised through a promise chain to avoid concurrent temp-file writes.
 - 13 new tests (StateStore load/save with malformed-file fallback, OverrideManager.restore semantics, Scheduler restoreFiredToday + onStateChange); total suite now 176.
+- Custom Homebridge UI under `homebridge-ui/`:
+  - `server.js` exposes `/discover-bridges`, `/probe-bridge`, `/pair-bridge`, `/list-lights` endpoints by delegating to the compiled `dist/hue/*` modules.
+  - `public/index.html` lays out seven sections (Hue, Location, Pump, Zones, Schedule, Weather & blocking, Advanced) with all controls per the spec — no raw JSON editing.
+  - `public/style.css` is vanilla, dark-mode aware via `prefers-color-scheme`, with status dots, card layout, modal, and sticky save bar.
+  - `public/script.js` loads/serialises the typed config, renders dynamic zone + schedule lists, runs the pairing polling loop, validates before save, and confirms destructive actions.
+  - `config.schema.json` now sets `customUi: true` so Homebridge loads the UI; the full schema for fallback hand-editing comes in Phase 10.

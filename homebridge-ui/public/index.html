@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Smart Irrigation</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header>
+        <h1>Smart Irrigation</h1>
+        <p class="subtitle">
+          Weather-aware Homebridge irrigation platform driving Philips Hue smart sockets.
+        </p>
+      </header>
+
+      <!-- ============================================================ Hue Bridge -->
+      <section id="section-hue" class="card">
+        <h2>Hue Bridge</h2>
+        <p class="hint">
+          Connect to your local Philips Hue Bridge. Discovery uses mDNS; if your network
+          blocks it, enter the IP manually.
+        </p>
+
+        <div class="form-row">
+          <label for="hue-ip">Bridge IP</label>
+          <div class="input-with-button">
+            <input
+              type="text"
+              id="hue-ip"
+              placeholder="192.168.x.x"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <button type="button" id="btn-discover" class="secondary">Find bridges</button>
+          </div>
+        </div>
+
+        <div id="discovery-results" class="discovery-results hidden"></div>
+
+        <div class="form-row status-row">
+          <span>Bridge status</span>
+          <span class="status">
+            <span id="hue-status-dot" class="status-dot status-unknown"></span>
+            <span id="hue-status-text">Not connected</span>
+          </span>
+          <button type="button" id="btn-probe" class="secondary small">Test connection</button>
+        </div>
+
+        <div class="form-row">
+          <label for="hue-api-key">API key</label>
+          <div class="input-with-button">
+            <input type="text" id="hue-api-key" placeholder="(set after pairing)" readonly />
+            <button type="button" id="btn-pair" class="primary">Pair</button>
+          </div>
+          <p class="hint">
+            Press the round button on top of your Hue Bridge first, then click Pair.
+          </p>
+        </div>
+
+        <div class="form-row">
+          <span>Detected lights / sockets</span>
+          <button type="button" id="btn-refresh-lights" class="secondary small">Refresh</button>
+        </div>
+        <div id="hue-lights" class="hue-lights">
+          <p class="empty">Pair the bridge to see available lights.</p>
+        </div>
+      </section>
+
+      <!-- ============================================================ Location -->
+      <section id="section-location" class="card">
+        <h2>Location</h2>
+        <p class="hint">
+          Used by every weather source. Decimal degrees, WGS84.
+        </p>
+        <div class="form-grid two">
+          <label
+            >Latitude
+            <input type="number" id="loc-lat" step="0.0001" min="-90" max="90" placeholder="52.37" />
+          </label>
+          <label
+            >Longitude
+            <input type="number" id="loc-lon" step="0.0001" min="-180" max="180" placeholder="4.89" />
+          </label>
+        </div>
+        <div class="form-row">
+          <label
+            >Location name (display only)
+            <input type="text" id="loc-name" placeholder="Home" />
+          </label>
+        </div>
+      </section>
+
+      <!-- ============================================================ Pump -->
+      <section id="section-pump" class="card">
+        <h2>Pump</h2>
+        <label class="toggle">
+          <input type="checkbox" id="pump-enabled" />
+          <span>This setup has a central pump</span>
+        </label>
+
+        <div id="pump-details" class="pump-details hidden">
+          <div class="form-row">
+            <label for="pump-light"
+              >Pump outlet
+              <select id="pump-light"></select>
+            </label>
+          </div>
+          <div class="form-grid two">
+            <label
+              >Pre-run (sec)
+              <input type="number" id="pump-pre" min="0" max="120" step="1" value="3" />
+            </label>
+            <label
+              >Post-run (sec)
+              <input type="number" id="pump-post" min="0" max="120" step="1" value="5" />
+            </label>
+          </div>
+          <div class="form-row">
+            <span>Zones served by this pump</span>
+            <p class="hint">Leave all selected for "every zone".</p>
+            <div id="pump-zones" class="check-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ Zones -->
+      <section id="section-zones" class="card">
+        <div class="section-head">
+          <h2>Zones</h2>
+          <button type="button" id="btn-add-zone" class="primary">Add zone</button>
+        </div>
+        <p class="hint">
+          Each zone maps a Hue smart socket to a logical watering area.
+        </p>
+        <div id="zones-list" class="dynamic-list">
+          <p class="empty">No zones yet — click "Add zone" to define one.</p>
+        </div>
+      </section>
+
+      <!-- ============================================================ Schedule -->
+      <section id="section-schedule" class="card">
+        <div class="section-head">
+          <h2>Schedule</h2>
+          <button type="button" id="btn-add-entry" class="primary">Add entry</button>
+        </div>
+        <p class="hint">
+          The "Activate Schedule" switch in Apple Home controls whether these entries fire.
+        </p>
+        <div id="schedule-list" class="dynamic-list">
+          <p class="empty">No schedule entries yet — the plugin will run in manual mode only.</p>
+        </div>
+      </section>
+
+      <!-- ============================================================ Weather & Blocking -->
+      <section id="section-weather" class="card">
+        <h2>Weather &amp; blocking</h2>
+        <p class="hint">
+          Open-Meteo and Buienradar are free and need no API key; OpenWeatherMap is optional.
+        </p>
+
+        <div class="form-row check-list">
+          <label><input type="checkbox" id="src-open-meteo" /> Open-Meteo (worldwide, ECMWF)</label>
+          <label
+            ><input type="checkbox" id="src-buienradar" /> Buienradar (Netherlands KNMI feed)</label
+          >
+          <label
+            ><input type="checkbox" id="src-owm" /> OpenWeatherMap (needs API key)</label
+          >
+        </div>
+
+        <div class="form-row">
+          <label for="owm-key">OpenWeatherMap API key</label>
+          <input type="text" id="owm-key" placeholder="(leave blank to disable)" autocomplete="off" />
+        </div>
+
+        <div class="form-grid two">
+          <label
+            >Consensus strategy
+            <select id="consensus-strategy">
+              <option value="any">any — block if any source reports</option>
+              <option value="majority" selected>majority — block on most sources</option>
+              <option value="all">all — block only when every source agrees</option>
+            </select>
+          </label>
+          <label
+            >Cache (minutes)
+            <input type="number" id="weather-cache-min" min="1" max="120" step="1" value="10" />
+          </label>
+        </div>
+
+        <div class="form-grid two">
+          <label
+            >Override auto-reset (minutes)
+            <input type="number" id="override-reset-min" min="5" max="720" step="5" value="60" />
+          </label>
+          <label
+            >Wind unit (display)
+            <select id="wind-unit">
+              <option value="m/s">m/s</option>
+              <option value="km/h">km/h</option>
+              <option value="mph">mph</option>
+              <option value="kts">knots</option>
+              <option value="Bft">Beaufort</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <!-- ============================================================ Advanced -->
+      <section id="section-advanced" class="card">
+        <h2>Advanced</h2>
+        <div class="form-grid two">
+          <label
+            >Log level
+            <select id="log-level">
+              <option value="info">info</option>
+              <option value="debug">debug</option>
+            </select>
+          </label>
+          <label
+            >Hue health-check interval (sec)
+            <input type="number" id="hue-health-sec" min="15" max="600" step="5" value="60" />
+          </label>
+        </div>
+      </section>
+
+      <footer class="action-bar">
+        <span id="save-feedback" class="save-feedback"></span>
+        <button type="button" id="btn-save" class="primary large">Save</button>
+      </footer>
+    </main>
+
+    <!-- ====================== Confirmation modal ====================== -->
+    <div id="confirm-modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-content">
+        <p id="confirm-text">Are you sure?</p>
+        <div class="modal-actions">
+          <button type="button" id="confirm-cancel" class="secondary">Cancel</button>
+          <button type="button" id="confirm-ok" class="danger">Confirm</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
