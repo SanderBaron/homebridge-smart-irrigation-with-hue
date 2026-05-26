@@ -37,6 +37,27 @@ export interface RainBlockingConfig {
   next12hThresholdMm: number;
 }
 
+/**
+ * Optional central pump that must run before any of its covered zones can
+ * receive water. v1 supports a single pump; multi-pump configurations are on
+ * the roadmap.
+ */
+export interface PumpConfig {
+  /** Master toggle. When false, the orchestrator becomes a no-op so the platform code doesn't need to branch. */
+  enabled: boolean;
+  /** Hue light/socket id the bridge toggles to power the pump. */
+  hueLightId: string;
+  /** Seconds the pump runs before any valve opens, to build line pressure. Default 3. */
+  preRunSec: number;
+  /** Seconds the pump keeps running after the last valve closes, to bleed off pressure. Default 5. */
+  postRunSec: number;
+  /**
+   * Zone ids this pump serves. Empty array means "all zones" — the orchestrator
+   * treats that as universal coverage so users don't have to maintain a list.
+   */
+  zoneIds: string[];
+}
+
 export interface Zone {
   /** Stable identifier, persisted across restarts. */
   id: string;

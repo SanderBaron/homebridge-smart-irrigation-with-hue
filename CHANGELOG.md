@@ -31,3 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `evaluateWindBlocking` / `evaluateRainBlocking` produce per-source votes, abstain on missing metrics, then feed the consensus engine.
   - `evaluateZoneBlocking` combines both decisions for the platform layer.
 - 46 new tests; total suite now 109.
+- Pump orchestrator (`src/pumpOrchestrator.ts`):
+  - Reference-counts active zones using the pump and toggles the pump socket via an injected `setPumpState` callback.
+  - `requestPumpStart` resolves only after the pre-run delay so the caller can open valves against built-up pressure.
+  - `releasePumpStop` schedules the post-run shutdown; a new request inside the window cancels the pending shutdown.
+  - Coverage list defaults to "all zones" when empty; explicit list scopes the pump to specific zones.
+  - `forceStop` for shutdown hooks; concurrent starts are serialised onto a single startup.
+- 13 new tests using Jest fake timers; total suite now 122.
