@@ -1,4 +1,10 @@
-import type { CharacteristicValue, PlatformAccessory, Service } from 'homebridge';
+import type {
+  CharacteristicValue,
+  PlatformAccessory,
+  Service,
+  WithUUID,
+} from 'homebridge';
+import type { Characteristic } from '@homebridge/hap-nodejs';
 
 import {
   computeSwitches,
@@ -127,7 +133,7 @@ export class SmartIrrigationAccessory {
       const svc =
         this.accessory.getServiceById(this.platform.Service.Valve, plan.subtype) ??
         this.accessory.addService(this.platform.Service.Valve, plan.displayName, plan.subtype);
-      svc.setCharacteristic(this.platform.Characteristic.Name, plan.displayName);
+      this.applyDisplayName(svc, plan.displayName);
       svc.setCharacteristic(
         this.platform.Characteristic.ValveType,
         this.platform.Characteristic.ValveType.IRRIGATION,
@@ -139,28 +145,32 @@ export class SmartIrrigationAccessory {
         startedAt: 0,
       });
 
-      svc
-        .getCharacteristic(this.platform.Characteristic.Active)
-        .onSet(this.makeValveActiveSetter(plan.zoneId))
-        .onGet(() => this.getValveActive(plan.zoneId));
-
-      svc
-        .getCharacteristic(this.platform.Characteristic.InUse)
-        .onGet(() => this.getValveActive(plan.zoneId));
-
-      svc
-        .getCharacteristic(this.platform.Characteristic.SetDuration)
-        .onSet((value) => {
+      this.rewireCharacteristic(
+        svc,
+        this.platform.Characteristic.Active,
+        this.makeValveActiveSetter(plan.zoneId),
+        () => this.getValveActive(plan.zoneId),
+      );
+      this.rewireCharacteristic(svc, this.platform.Characteristic.InUse, undefined, () =>
+        this.getValveActive(plan.zoneId),
+      );
+      this.rewireCharacteristic(
+        svc,
+        this.platform.Characteristic.SetDuration,
+        (value) => {
           const state = this.valveState.get(plan.zoneId);
           if (state !== undefined) {
             state.setDurationSec = Number(value);
           }
-        })
-        .onGet(() => this.valveState.get(plan.zoneId)?.setDurationSec ?? DEFAULT_VALVE_SECONDS);
-
-      svc
-        .getCharacteristic(this.platform.Characteristic.RemainingDuration)
-        .onGet(() => this.getRemainingSeconds(plan.zoneId));
+        },
+        () => this.valveState.get(plan.zoneId)?.setDurationSec ?? DEFAULT_VALVE_SECONDS,
+      );
+      this.rewireCharacteristic(
+        svc,
+        this.platform.Characteristic.RemainingDuration,
+        undefined,
+        () => this.getRemainingSeconds(plan.zoneId),
+      );
 
       this.irrigationService?.addLinkedService(svc);
       this.valveServices.set(plan.subtype, svc);
@@ -173,11 +183,51 @@ export class SmartIrrigationAccessory {
       const svc =
         this.accessory.getServiceById(this.platform.Service.Switch, plan.subtype) ??
         this.accessory.addService(this.platform.Service.Switch, plan.displayName, plan.subtype);
-      svc.setCharacteristic(this.platform.Characteristic.Name, plan.displayName);
-      svc.getCharacteristic(this.platform.Characteristic.On).onSet(this.makeSwitchSetter(plan));
+      this.applyDisplayName(svc, plan.displayName);
+      this.rewireCharacteristic(
+        svc,
+        this.platform.Characteristic.On,
+        this.makeSwitchSetter(plan),
+        () => this.initialSwitchState(plan),
+      );
       svc.updateCharacteristic(this.platform.Characteristic.On, this.initialSwitchState(plan));
       this.switchServices.set(plan.subtype, svc);
     }
+  }
+
+  /**
+   * Apply a display name to a service via both `Name` (HomeKit's stable name)
+   * and `ConfiguredName` (the user-editable label Apple Home shows). Without
+   * `ConfiguredName`, Apple Home often falls back to the accessory's display
+   * name — which is why every valve was showing up as "Smart Irrigation".
+   */
+  private applyDisplayName(svc: Service, displayName: string): void {
+    svc.setCharacteristic(this.platform.Characteristic.Name, displayName);
+    const configured = svc.getCharacteristic(this.platform.Characteristic.ConfiguredName);
+    configured.setProps({ perms: configured.props.perms });
+    configured.updateValue(displayName);
+  }
+
+  /**
+   * Replace any existing onSet / onGet handlers on the characteristic before
+   * attaching ours. When a cached accessory is loaded from disk on a
+   * subsequent Homebridge start, our previous handlers are already in place;
+   * calling `.onSet()` again would *add* a second listener, so each tap would
+   * fire every accumulated handler. removing first guarantees exactly one.
+   */
+  private rewireCharacteristic(
+    svc: Service,
+    characteristic: WithUUID<new () => Characteristic>,
+    onSetHandler: ((value: CharacteristicValue) => void | Promise<void>) | undefined,
+    onGetHandler: () => CharacteristicValue | Promise<CharacteristicValue>,
+  ): void {
+    const c = svc.getCharacteristic(characteristic);
+    c.removeAllListeners('set');
+    c.removeAllListeners('get');
+    if (onSetHandler !== undefined) {
+      c.onSet(onSetHandler);
+    }
+    c.onGet(onGetHandler);
   }
 
   /**
