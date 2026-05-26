@@ -3,18 +3,319 @@
   "pluginType": "platform",
   "singular": true,
   "customUi": true,
-  "headerDisplay": "Weather-aware irrigation platform driving Philips Hue smart sockets.",
-  "footerDisplay": "See the [README](https://github.com/SanderBaron/homebridge-weather-smart-irrigation#readme) for details.",
+  "headerDisplay": "Weather-aware Homebridge irrigation platform driving Philips Hue smart sockets. The custom UI is the recommended way to configure this plugin — the schema below is a fallback for users who prefer to edit `config.json` directly.",
+  "footerDisplay": "See the [README](https://github.com/SanderBaron/homebridge-weather-smart-irrigation#readme) for setup and troubleshooting.",
   "schema": {
     "type": "object",
+    "required": ["name", "location"],
     "properties": {
       "name": {
         "title": "Name",
         "type": "string",
         "default": "Smart Irrigation",
         "minLength": 1,
-        "required": true,
-        "description": "The name shown in the Homebridge log and Apple Home."
+        "description": "Display name shown in the Homebridge log and Apple Home."
+      },
+      "hue": {
+        "title": "Hue Bridge",
+        "type": "object",
+        "properties": {
+          "bridgeIp": {
+            "title": "Bridge IP",
+            "type": "string",
+            "format": "ipv4",
+            "description": "Local IPv4 address of the Philips Hue Bridge. Use the custom UI to discover and pair."
+          },
+          "apiKey": {
+            "title": "API key",
+            "type": "string",
+            "description": "Hue API key (username) issued when you press the bridge link button and pair. Set by the pairing flow in the custom UI."
+          },
+          "healthCheckSec": {
+            "title": "Health-check interval (sec)",
+            "type": "integer",
+            "default": 60,
+            "minimum": 15,
+            "maximum": 600,
+            "description": "How often to confirm the bridge is reachable. Valves are closed in plugin state when health checks fail."
+          }
+        }
+      },
+      "location": {
+        "title": "Location",
+        "type": "object",
+        "required": ["latitude", "longitude"],
+        "properties": {
+          "latitude": {
+            "title": "Latitude",
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90,
+            "description": "WGS84 decimal degrees, e.g. 52.37."
+          },
+          "longitude": {
+            "title": "Longitude",
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180,
+            "description": "WGS84 decimal degrees, e.g. 4.89."
+          },
+          "name": {
+            "title": "Location name",
+            "type": "string",
+            "description": "Display only — does not affect weather lookups."
+          }
+        }
+      },
+      "pump": {
+        "title": "Pump (optional)",
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "title": "Pump present",
+            "type": "boolean",
+            "default": false,
+            "description": "Toggle when this setup uses a central pump. Leave off for line-pressure setups."
+          },
+          "hueLightId": {
+            "title": "Pump Hue outlet",
+            "type": "string",
+            "description": "Hue light id controlling the pump socket."
+          },
+          "preRunSec": {
+            "title": "Pre-run (sec)",
+            "type": "integer",
+            "default": 3,
+            "minimum": 0,
+            "maximum": 120,
+            "description": "Seconds the pump runs before any valve opens, to build pressure."
+          },
+          "postRunSec": {
+            "title": "Post-run (sec)",
+            "type": "integer",
+            "default": 5,
+            "minimum": 0,
+            "maximum": 120,
+            "description": "Seconds the pump keeps running after the last valve closes, to bleed pressure."
+          },
+          "zoneIds": {
+            "title": "Zones served by this pump",
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Zone ids this pump runs for. Empty array means \"every zone\"."
+          }
+        }
+      },
+      "zones": {
+        "title": "Zones",
+        "type": "array",
+        "description": "Watering zones. Each zone maps a Hue smart socket to a logical area.",
+        "items": {
+          "type": "object",
+          "required": ["id", "name", "hueLightId"],
+          "properties": {
+            "id": {
+              "title": "Zone id",
+              "type": "string",
+              "minLength": 1,
+              "description": "Stable identifier. Used in schedule entries and persistent state."
+            },
+            "name": {
+              "title": "Name",
+              "type": "string",
+              "minLength": 1,
+              "description": "Display name shown in Apple Home."
+            },
+            "type": {
+              "title": "Type",
+              "type": "string",
+              "enum": ["sprinkler", "dripLine", "microSpray", "mist", "other"],
+              "default": "other",
+              "description": "Used only to seed smart defaults in the UI; blocking logic does not branch on type."
+            },
+            "hueLightId": {
+              "title": "Hue outlet",
+              "type": "string",
+              "minLength": 1,
+              "description": "Hue light id that powers this zone's valve."
+            },
+            "concurrencyGroup": {
+              "title": "Concurrency group",
+              "type": "string",
+              "description": "Zones with the same group can water simultaneously. Empty means standalone (always alone)."
+            },
+            "windBlocking": {
+              "title": "Wind blocking",
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "title": "Enabled",
+                  "type": "boolean",
+                  "default": false
+                },
+                "blockedOctants": {
+                  "title": "Blocked octants",
+                  "type": "array",
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "enum": ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+                  },
+                  "description": "Wind directions (where the wind blows FROM) that block this zone."
+                },
+                "minimumWindSpeedMs": {
+                  "title": "Minimum wind speed (m/s)",
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 50,
+                  "default": 0,
+                  "description": "Stored in m/s. The UI handles km/h / mph / knots / Beaufort conversion."
+                }
+              }
+            },
+            "rainBlocking": {
+              "title": "Rain skip",
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "title": "Enabled",
+                  "type": "boolean",
+                  "default": false
+                },
+                "past24hThresholdMm": {
+                  "title": "Past 24h threshold (mm)",
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 200,
+                  "default": 0,
+                  "description": "Skip watering when total rainfall in the last 24 hours meets or exceeds this."
+                },
+                "next12hThresholdMm": {
+                  "title": "Forecast 12h threshold (mm)",
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 200,
+                  "default": 0,
+                  "description": "Skip watering when forecast rainfall in the next 12 hours meets or exceeds this."
+                }
+              }
+            }
+          }
+        }
+      },
+      "schedule": {
+        "title": "Schedule",
+        "type": "array",
+        "description": "Watering entries. The \"Activate Schedule\" switch in Apple Home controls whether these fire.",
+        "items": {
+          "type": "object",
+          "required": ["id", "name", "days", "startTime", "durationMin", "zoneIds"],
+          "properties": {
+            "id": {
+              "title": "Entry id",
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "title": "Name",
+              "type": "string",
+              "minLength": 1
+            },
+            "days": {
+              "title": "Days",
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "enum": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+              }
+            },
+            "startTime": {
+              "title": "Start time",
+              "type": "string",
+              "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
+              "description": "24-hour HH:MM, e.g. 08:00."
+            },
+            "durationMin": {
+              "title": "Duration (minutes)",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 240
+            },
+            "zoneIds": {
+              "title": "Zones",
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "string" }
+            }
+          }
+        }
+      },
+      "weather": {
+        "title": "Weather & blocking",
+        "type": "object",
+        "properties": {
+          "sources": {
+            "title": "Sources",
+            "type": "array",
+            "default": ["open-meteo", "buienradar"],
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": ["open-meteo", "buienradar", "openweathermap"]
+            },
+            "description": "Open-Meteo and Buienradar are free; OpenWeatherMap requires an API key."
+          },
+          "openWeatherMapApiKey": {
+            "title": "OpenWeatherMap API key",
+            "type": "string",
+            "description": "Required only if openweathermap is in sources."
+          },
+          "consensusStrategy": {
+            "title": "Consensus strategy",
+            "type": "string",
+            "enum": ["any", "majority", "all"],
+            "default": "majority",
+            "description": "How the per-source votes combine into a block / don't-block decision."
+          },
+          "cacheMinutes": {
+            "title": "Cache (minutes)",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 120,
+            "default": 10,
+            "description": "How long to memoise weather data between API calls."
+          }
+        }
+      },
+      "override": {
+        "title": "Overrides",
+        "type": "object",
+        "properties": {
+          "autoResetMinutes": {
+            "title": "Auto-reset (minutes)",
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 720,
+            "default": 60,
+            "description": "How long a manual wind/rain override switch stays on before snapping back."
+          }
+        }
+      },
+      "windUnit": {
+        "title": "Wind unit (display)",
+        "type": "string",
+        "enum": ["m/s", "km/h", "mph", "kts", "Bft"],
+        "default": "m/s",
+        "description": "Display unit for wind speeds in the UI and logs. Internal storage and calculations always use m/s."
+      },
+      "logLevel": {
+        "title": "Log level",
+        "type": "string",
+        "enum": ["info", "debug"],
+        "default": "info",
+        "description": "Use debug while troubleshooting; info for normal operation."
       }
     }
   }
