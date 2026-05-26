@@ -38,6 +38,30 @@ export interface RainBlockingConfig {
 }
 
 /**
+ * Day-of-week codes. Ordering matches JavaScript's `Date.getDay()` (Sun = 0)
+ * so the scheduler can map a Date directly to the array index. UI shortcuts
+ * like "Daily", "Weekdays only", "Weekends only" are expanded to a list of
+ * these before persistence.
+ */
+export type WeekDay = 'Sun' | 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat';
+
+/** A single entry in the user's watering schedule. */
+export interface ScheduleEntry {
+  /** Stable identifier, persisted across restarts. */
+  id: string;
+  /** User-chosen display name (free text). */
+  name: string;
+  /** Days of the week on which this entry fires. */
+  days: WeekDay[];
+  /** Start time in 24-hour `HH:MM` format. */
+  startTime: string;
+  /** Duration per zone in minutes. Every zone listed gets watered for this long. */
+  durationMin: number;
+  /** Zones included in this entry, by Zone.id. */
+  zoneIds: string[];
+}
+
+/**
  * Optional central pump that must run before any of its covered zones can
  * receive water. v1 supports a single pump; multi-pump configurations are on
  * the roadmap.

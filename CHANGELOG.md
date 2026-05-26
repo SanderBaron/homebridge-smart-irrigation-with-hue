@@ -38,3 +38,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Coverage list defaults to "all zones" when empty; explicit list scopes the pump to specific zones.
   - `forceStop` for shutdown hooks; concurrent starts are serialised onto a single startup.
 - 13 new tests using Jest fake timers; total suite now 122.
+- Schedule types (`src/types.ts`): `WeekDay` (Sun-first to match `Date.getDay()`), `ScheduleEntry`.
+- Scheduler (`src/scheduler.ts`):
+  - Tick-driven engine that fires day-matching entries exactly once per local day.
+  - Enforces concurrency: zones in the same group run together; different-group or standalone zones queue and run sequentially with conflicts logged.
+  - Restart-safe: activating mid-day marks entries whose start time is already strictly past as "fired today" so a Homebridge restart never replays the morning's watering.
+  - Optional `isZoneBlocked` hook for the weather blocking engine (Phase 4) — blocked zones are skipped, not queued.
+  - `stopAll` for shutdown hooks; deactivating the scheduler does not interrupt currently running zones.
+- 13 new tests; total suite now 135.
