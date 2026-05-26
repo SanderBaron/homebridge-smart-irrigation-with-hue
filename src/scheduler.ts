@@ -329,10 +329,7 @@ export class Scheduler {
           continue;
         }
         if (this.isZoneBlockedCb?.(buddyId) === true) {
-          this.log?.info(
-            'Run-with buddy %s skipped: currently weather-blocked',
-            buddyId,
-          );
+          this.log?.info('Run-with buddy %s skipped: currently weather-blocked', buddyId);
           continue;
         }
         this.queue.push({

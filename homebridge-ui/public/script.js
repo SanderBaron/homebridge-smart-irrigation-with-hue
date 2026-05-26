@@ -217,7 +217,44 @@ function wireEvents() {
     renderSchedule();
   });
 
-  document.getElementById('btn-save').addEventListener('click', saveConfig);
+  // Auto-sync to the parent's in-memory config on every change. The user
+  // clicks Homebridge UI X's native "OPSLAAN" / Save button (in the modal
+  // footer, outside the iframe) to actually write the config to disk — we
+  // just keep the parent's view of the config up to date.
+  document.body.addEventListener('change', queueSync);
+  document.body.addEventListener('input', queueSync);
+}
+
+let syncTimer = null;
+function queueSync() {
+  if (syncTimer !== null) {
+    clearTimeout(syncTimer);
+  }
+  syncTimer = setTimeout(() => {
+    syncTimer = null;
+    void syncToParent();
+  }, 350);
+}
+
+async function syncToParent() {
+  const feedback = document.getElementById('save-feedback');
+  feedback.textContent = '';
+  feedback.className = 'save-feedback';
+  const cfg = serialise();
+  const issues = validate(cfg);
+  try {
+    await homebridge.updatePluginConfig([cfg]);
+    if (issues.length === 0) {
+      feedback.textContent = 'Changes ready — click Save below to write to disk.';
+      feedback.classList.add('muted');
+    } else {
+      feedback.textContent = 'Changes ready, but: ' + issues.join('; ');
+      feedback.classList.add('error');
+    }
+  } catch (err) {
+    feedback.textContent = 'Could not sync to Homebridge: ' + describeError(err);
+    feedback.classList.add('error');
+  }
 }
 
 // ============================================================ hydrate / serialise
@@ -786,33 +823,7 @@ function updatePumpZones() {
     .join('');
 }
 
-// ============================================================ save
-
-async function saveConfig() {
-  const feedback = document.getElementById('save-feedback');
-  feedback.textContent = '';
-  feedback.className = 'save-feedback';
-  const cfg = serialise();
-  const issues = validate(cfg);
-  if (issues.length > 0) {
-    feedback.textContent = 'Cannot save: ' + issues.join('; ');
-    feedback.classList.add('error');
-    return;
-  }
-  homebridge.showSpinner();
-  try {
-    await homebridge.updatePluginConfig([cfg]);
-    await homebridge.savePluginConfig();
-    feedback.textContent = 'Saved. Restart Homebridge for changes to take effect.';
-    feedback.classList.add('success');
-    homebridge.toast.success('Configuration saved.');
-  } catch (err) {
-    feedback.textContent = 'Save failed: ' + describeError(err);
-    feedback.classList.add('error');
-  } finally {
-    homebridge.hideSpinner();
-  }
-}
+// ============================================================ validation
 
 function validate(cfg) {
   const issues = [];
