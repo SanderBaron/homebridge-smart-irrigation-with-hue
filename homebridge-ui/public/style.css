@@ -1,34 +1,68 @@
 /* ------------------------------------------------------------------ *
  * Smart Irrigation — Homebridge custom UI styles.
  *
- * Vanilla CSS, dark-mode aware via prefers-color-scheme. The Homebridge UI
- * loads this inside an iframe; the parent provides no framework CSS.
+ * Theme is driven by `data-theme` on <body>, set from
+ * `homebridge.serverEnv.theme` so we follow the Homebridge UI X setting
+ * exactly rather than guessing at OS prefers-color-scheme. The
+ * prefers-color-scheme media query is kept as a safety net for the rare
+ * case where serverEnv is unavailable.
+ *
+ * All text colours are set explicitly to defeat any CSS the parent
+ * Homebridge UI may leak into the iframe via Bootstrap or its theme
+ * stylesheet.
  * ------------------------------------------------------------------ */
 
 :root {
   --bg: #f4f5f7;
   --card-bg: #ffffff;
+  --item-bg: #fafbfc;
   --fg: #1a1a1a;
-  --muted: #6b7280;
-  --border: #e1e4e8;
-  --primary: #007aff;
-  --primary-hover: #0062cc;
-  --danger: #d33;
-  --danger-hover: #b32424;
-  --success: #2ea043;
-  --warning: #d97706;
+  --fg-strong: #000000;
+  --muted: #4b5563;
+  --border: #d0d7de;
+  --primary: #0969da;
+  --primary-hover: #0858c0;
+  --danger: #cf222e;
+  --danger-hover: #a40e26;
+  --success: #1a7f37;
+  --warning: #9a6700;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
+body[data-theme='dark'],
+body[data-theme='auto'] {
+  --bg: #1c1c1e;
+  --card-bg: #2c2c2e;
+  --item-bg: #3a3a3c;
+  --fg: #f5f5f7;
+  --fg-strong: #ffffff;
+  --muted: #c7c7cc;
+  --border: #48484a;
+  --primary: #0a84ff;
+  --primary-hover: #409cff;
+  --danger: #ff453a;
+  --danger-hover: #ff6961;
+  --success: #30d158;
+  --warning: #ffd60a;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+/* Fall back to OS preference only when no data-theme is set yet. */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0d1117;
-    --card-bg: #161b22;
-    --fg: #e6edf3;
-    --muted: #8b949e;
-    --border: #30363d;
-    --primary: #2f81f7;
-    --primary-hover: #4a9fff;
+  body:not([data-theme]) {
+    --bg: #1c1c1e;
+    --card-bg: #2c2c2e;
+    --item-bg: #3a3a3c;
+    --fg: #f5f5f7;
+    --fg-strong: #ffffff;
+    --muted: #c7c7cc;
+    --border: #48484a;
+    --primary: #0a84ff;
+    --primary-hover: #409cff;
+    --danger: #ff453a;
+    --danger-hover: #ff6961;
+    --success: #30d158;
+    --warning: #ffd60a;
     --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
   }
 }
@@ -37,52 +71,79 @@
   box-sizing: border-box;
 }
 
+html,
 body {
   margin: 0;
   padding: 0;
+  width: 100%;
+  min-width: 100%;
+  background: var(--bg) !important;
+  color: var(--fg) !important;
+  color-scheme: light dark;
   font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    Roboto,
-    Oxygen,
-    Ubuntu,
-    Cantarell,
-    sans-serif;
-  background: var(--bg);
-  color: var(--fg);
-  line-height: 1.5;
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, Helvetica,
+    Arial, sans-serif;
   font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Defeat any global colour rule the Homebridge UI may inject into the iframe. */
+.container,
+.container * {
+  color: inherit;
 }
 
 .container {
-  max-width: 960px;
+  max-width: 1100px;
   margin: 0 auto;
-  padding: 24px 20px 120px;
+  padding: 20px 20px 110px;
+  color: var(--fg);
 }
 
 header h1 {
   margin: 0 0 4px;
-  font-size: 24px;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--fg-strong) !important;
 }
 
 header .subtitle {
-  margin: 0 0 24px;
-  color: var(--muted);
+  margin: 0 0 20px;
+  color: var(--muted) !important;
+  font-size: 13px;
 }
 
+/* ---------------- cards ---------------- */
+
 .card {
-  background: var(--card-bg);
+  background: var(--card-bg) !important;
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 20px;
-  margin-bottom: 16px;
+  padding: 18px;
+  margin-bottom: 14px;
   box-shadow: var(--shadow);
+  color: var(--fg) !important;
 }
 
 .card h2 {
   margin: 0 0 8px;
-  font-size: 17px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fg-strong) !important;
+}
+
+.card legend {
+  font-weight: 600;
+  color: var(--fg-strong) !important;
+  padding: 0 4px;
+}
+
+.card fieldset {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 14px 14px;
+  margin: 10px 0 0;
 }
 
 .section-head {
@@ -93,27 +154,31 @@ header .subtitle {
 }
 
 .hint {
-  color: var(--muted);
+  color: var(--muted) !important;
   font-size: 13px;
   margin: 4px 0 12px;
 }
 
-/* ---------------- form rows ---------------- */
+/* ---------------- form layout ---------------- */
 
 .form-row {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   margin: 8px 0;
+  color: var(--fg);
 }
 
-.form-row > label {
+.form-row > label,
+.form-row > span {
+  color: var(--fg);
   font-weight: 500;
 }
 
 .form-grid {
   display: grid;
   gap: 12px;
+  margin: 8px 0;
 }
 
 .form-grid.two {
@@ -129,8 +194,12 @@ header .subtitle {
 label {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  color: var(--fg) !important;
+  font-weight: 500;
 }
+
+/* ---------------- form controls ---------------- */
 
 input[type='text'],
 input[type='number'],
@@ -138,8 +207,8 @@ select {
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--card-bg);
-  color: var(--fg);
+  background: var(--card-bg) !important;
+  color: var(--fg) !important;
   font-size: 14px;
   width: 100%;
   font-family: inherit;
@@ -150,11 +219,16 @@ input[readonly] {
   color: var(--muted);
 }
 
+input::placeholder {
+  color: var(--muted);
+  opacity: 0.7;
+}
+
 input:focus,
 select:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(47, 129, 247, 0.2);
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.25);
 }
 
 input.invalid {
@@ -184,37 +258,46 @@ button {
   font-family: inherit;
   transition:
     background 0.15s,
-    border-color 0.15s;
+    border-color 0.15s,
+    color 0.15s;
 }
 
 button:hover {
   border-color: var(--primary);
+  color: var(--primary);
 }
 
 button.primary {
   background: var(--primary);
-  color: #fff;
+  color: #ffffff;
   border-color: var(--primary);
 }
 
 button.primary:hover {
   background: var(--primary-hover);
   border-color: var(--primary-hover);
+  color: #ffffff;
 }
 
 button.danger {
   background: var(--danger);
-  color: #fff;
+  color: #ffffff;
   border-color: var(--danger);
 }
 
 button.danger:hover {
   background: var(--danger-hover);
   border-color: var(--danger-hover);
+  color: #ffffff;
 }
 
 button.secondary {
   background: transparent;
+  color: var(--fg);
+}
+
+button.secondary:hover {
+  background: var(--item-bg);
 }
 
 button.small {
@@ -244,6 +327,7 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  color: var(--fg);
 }
 
 .status-dot {
@@ -256,10 +340,12 @@ button:disabled {
 
 .status-online {
   background: var(--success);
+  box-shadow: 0 0 0 3px rgba(48, 209, 88, 0.2);
 }
 
 .status-offline {
   background: var(--danger);
+  box-shadow: 0 0 0 3px rgba(255, 69, 58, 0.2);
 }
 
 .status-unknown {
@@ -268,17 +354,18 @@ button:disabled {
 
 .status-pending {
   background: var(--warning);
+  box-shadow: 0 0 0 3px rgba(255, 214, 10, 0.2);
 }
 
 /* ---------------- discovery list ---------------- */
 
 .discovery-results {
   margin: 8px 0;
-  padding: 0;
-  list-style: none;
   border: 1px dashed var(--border);
   border-radius: 6px;
   padding: 8px;
+  background: var(--item-bg);
+  color: var(--fg);
 }
 
 .discovery-results .result {
@@ -287,6 +374,7 @@ button:disabled {
   align-items: center;
   padding: 6px 4px;
   border-bottom: 1px solid var(--border);
+  color: var(--fg);
 }
 
 .discovery-results .result:last-child {
@@ -296,10 +384,12 @@ button:disabled {
 /* ---------------- toggle ---------------- */
 
 .toggle {
-  flex-direction: row;
+  flex-direction: row !important;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   cursor: pointer;
+  color: var(--fg);
+  font-weight: 600;
 }
 
 .toggle input[type='checkbox'] {
@@ -307,6 +397,7 @@ button:disabled {
   height: 18px;
   margin: 0;
   cursor: pointer;
+  accent-color: var(--primary);
 }
 
 /* ---------------- check list ---------------- */
@@ -314,20 +405,23 @@ button:disabled {
 .check-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  color: var(--fg);
 }
 
 .check-list label {
   flex-direction: row;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   font-weight: 400;
+  color: var(--fg);
 }
 
 .check-list input[type='checkbox'] {
   width: 16px;
   height: 16px;
   margin: 0;
+  accent-color: var(--primary);
 }
 
 /* ---------------- dynamic list ---------------- */
@@ -349,30 +443,42 @@ button:disabled {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 14px;
-  background: var(--bg);
+  background: var(--item-bg) !important;
+  color: var(--fg) !important;
 }
 
 .item-card .item-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .item-card .item-title {
   font-weight: 600;
   font-size: 15px;
+  color: var(--fg-strong) !important;
 }
 
 .item-card .item-body {
   display: grid;
   gap: 12px;
+  color: var(--fg);
 }
 
 .item-card .octant-row {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
+  color: var(--fg);
+}
+
+.item-card .octant-row label {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  font-weight: 400;
+  color: var(--fg);
 }
 
 @media (max-width: 480px) {
@@ -395,8 +501,9 @@ button:disabled {
   justify-content: flex-end;
   align-items: center;
   gap: 12px;
-  box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.2);
   z-index: 50;
+  color: var(--fg);
 }
 
 .save-feedback {
@@ -417,7 +524,7 @@ button:disabled {
 .modal {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -430,11 +537,13 @@ button:disabled {
   padding: 20px;
   max-width: 420px;
   width: 90%;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+  color: var(--fg);
 }
 
 .modal-content p {
   margin: 0 0 16px;
+  color: var(--fg);
 }
 
 .modal-actions {
@@ -461,17 +570,20 @@ button:disabled {
   padding: 8px;
   border: 1px dashed var(--border);
   border-radius: 6px;
+  background: var(--item-bg) !important;
   font-size: 13px;
+  color: var(--fg) !important;
 }
 
 .hue-lights .light-row {
   display: flex;
   justify-content: space-between;
-  padding: 2px 4px;
+  padding: 3px 4px;
+  color: var(--fg) !important;
 }
 
 .hue-lights .empty {
-  color: var(--muted);
+  color: var(--muted) !important;
   font-style: italic;
   margin: 0;
 }

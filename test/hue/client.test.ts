@@ -49,7 +49,7 @@ describe('HueClient.getConfig', () => {
     const cfg = await client.getConfig();
     expect(cfg.bridgeid).toBe('ABC');
     expect(fetchImpl).toHaveBeenCalledWith(
-      'http://1.2.3.4/api/config',
+      'https://1.2.3.4/api/config',
       expect.objectContaining({ method: 'GET' }),
     );
   });
@@ -88,7 +88,7 @@ describe('HueClient.setLightOn', () => {
     });
     await client.setLightOn('1', true);
     expect(fetchImpl).toHaveBeenCalledWith(
-      'http://1.2.3.4/api/key/lights/1/state',
+      'https://1.2.3.4/api/key/lights/1/state',
       expect.objectContaining({
         method: 'PUT',
         body: JSON.stringify({ on: true }),

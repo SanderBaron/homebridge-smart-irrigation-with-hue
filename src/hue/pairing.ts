@@ -1,5 +1,6 @@
 import os from 'node:os';
 
+import { getHueDispatcher, type HueRequestInit } from './httpsAgent';
 import { HueError } from './types';
 
 export interface PairingOptions {
@@ -60,19 +61,25 @@ export async function pairWithBridge(options: PairingOptions): Promise<string> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? 5000;
   const deviceType = options.deviceType ?? defaultDeviceType();
-  const url = `http://${options.ip}/api`;
+  const url = `https://${options.ip}/api`;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
+  const init: HueRequestInit = {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ devicetype: deviceType }),
+    signal: controller.signal,
+  };
+  const dispatcher = getHueDispatcher();
+  if (dispatcher !== undefined) {
+    init.dispatcher = dispatcher;
+  }
+
   let res: Response;
   try {
-    res = await fetchImpl(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ devicetype: deviceType }),
-      signal: controller.signal,
-    });
+    res = await fetchImpl(url, init);
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
       throw new HueError(`Pairing request to ${options.ip} timed out`, 'timeout', { cause: err });

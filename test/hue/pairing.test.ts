@@ -54,7 +54,7 @@ describe('pairWithBridge', () => {
     });
     expect(result).toBe('abc-123-secret');
     expect(fetchImpl).toHaveBeenCalledWith(
-      'http://192.0.2.1/api',
+      'https://192.0.2.1/api',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ devicetype: 'smartirrigation#test' }),

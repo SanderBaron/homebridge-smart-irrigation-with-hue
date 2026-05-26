@@ -50,7 +50,8 @@
   },
   "dependencies": {
     "@homebridge/plugin-ui-utils": "^2.0.0",
-    "bonjour-service": "^1.2.1"
+    "bonjour-service": "^1.2.1",
+    "undici": "^7.26.0"
   },
   "devDependencies": {
     "@types/jest": "^29.5.12",

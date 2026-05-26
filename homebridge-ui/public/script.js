@@ -79,6 +79,7 @@ function defaultConfig() {
 // ============================================================ entrypoint
 
 (async function init() {
+  applyThemeFromHomebridge();
   try {
     const configs = await homebridge.getPluginConfig();
     if (Array.isArray(configs) && configs.length > 0 && configs[0]) {
@@ -93,6 +94,73 @@ function defaultConfig() {
     homebridge.toast.error('Could not load plugin config: ' + describeError(err));
   }
 })();
+
+/**
+ * Mirror Homebridge UI X's theme into our iframe via the `data-theme`
+ * attribute on body. Tries three signals in order of reliability:
+ *
+ *  1. The parent document's body class. HB UI X writes `dark-mode` or
+ *     `light-mode` (and named-theme classes). This is the source of truth
+ *     — what the user actually sees in the surrounding UI.
+ *  2. `homebridge.serverEnv.theme` — string from the server. Falls back here
+ *     if step 1 is unavailable (sandboxed iframe, future API changes).
+ *  3. The OS `prefers-color-scheme` via CSS only; this function just leaves
+ *     `data-theme` unset and lets style.css handle it.
+ */
+function applyThemeFromHomebridge() {
+  let resolved = null;
+
+  // 1. Parent document class (most reliable — reflects what the user sees).
+  try {
+    if (window.parent && window.parent !== window && window.parent.document) {
+      const cls = window.parent.document.body.classList;
+      if (cls.contains('dark-mode')) {
+        resolved = 'dark';
+      } else if (cls.contains('light-mode')) {
+        resolved = 'light';
+      } else {
+        // Inspect any class containing 'dark' / 'light' (named theme variants).
+        for (const c of cls) {
+          if (c.includes('dark')) {
+            resolved = 'dark';
+            break;
+          }
+          if (c.includes('light')) {
+            resolved = 'light';
+            break;
+          }
+        }
+      }
+    }
+  } catch {
+    // Cross-origin lockdown — fall through to other signals.
+  }
+
+  // 2. serverEnv.theme string from the Homebridge UI socket.
+  if (resolved === null) {
+    try {
+      const theme = (homebridge && homebridge.serverEnv && homebridge.serverEnv.theme) || '';
+      const normalized = String(theme).toLowerCase();
+      if (normalized.includes('dark')) {
+        resolved = 'dark';
+      } else if (normalized.includes('light')) {
+        resolved = 'light';
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (resolved !== null) {
+    document.body.setAttribute('data-theme', resolved);
+  }
+  // Diagnostic — visible in DevTools to confirm detection during smoke tests.
+  // eslint-disable-next-line no-console
+  console.log(
+    '[Smart Irrigation UI] resolved theme:',
+    resolved ?? '(none — using prefers-color-scheme)',
+  );
+}
 
 function mergeDefaults(cfg) {
   const base = defaultConfig();

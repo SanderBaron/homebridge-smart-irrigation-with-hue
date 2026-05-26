@@ -1,5 +1,6 @@
 import type { Logging } from 'homebridge';
 
+import { getHueDispatcher, type HueRequestInit } from './httpsAgent';
 import { HueError, type BridgeConfig, type HueLight } from './types';
 
 export interface HueClientOptions {
@@ -133,11 +134,15 @@ export class HueClient {
   }
 
   private async attemptRequest<T>(method: HttpMethod, path: string, body?: unknown): Promise<T> {
-    const url = `http://${this.ip}${path}`;
+    const url = `https://${this.ip}${path}`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
-    const init: RequestInit = { method, signal: controller.signal };
+    const init: HueRequestInit = { method, signal: controller.signal };
+    const dispatcher = getHueDispatcher();
+    if (dispatcher !== undefined) {
+      init.dispatcher = dispatcher;
+    }
     if (body !== undefined) {
       init.headers = { 'Content-Type': 'application/json' };
       init.body = JSON.stringify(body);
