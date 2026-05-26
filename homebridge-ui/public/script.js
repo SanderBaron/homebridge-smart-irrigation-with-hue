@@ -70,7 +70,7 @@ function defaultConfig() {
       consensusStrategy: 'majority',
       cacheMinutes: 10,
     },
-    override: { autoResetMinutes: 60 },
+    override: { autoResetMinutes: 60, granularity: 'per-zone' },
     windUnit: 'm/s',
     logLevel: 'info',
   };
@@ -291,6 +291,7 @@ function hydrateForm() {
   setValue('weather-cache-min', c.weather.cacheMinutes || 10);
 
   setValue('override-reset-min', c.override.autoResetMinutes || 60);
+  setValue('override-granularity', c.override.granularity || 'per-zone');
   setValue('wind-unit', c.windUnit || 'm/s');
   setValue('log-level', c.logLevel || 'info');
 
@@ -344,6 +345,8 @@ function serialise() {
     5,
     Number(readValue('override-reset-min', 'number') || 60),
   );
+  const g = readValue('override-granularity', 'string');
+  c.override.granularity = g === 'global' || g === 'none' ? g : 'per-zone';
   c.windUnit = readValue('wind-unit', 'string');
   c.logLevel = readValue('log-level', 'string');
 

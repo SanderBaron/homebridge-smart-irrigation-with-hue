@@ -1,6 +1,11 @@
 import type { CharacteristicValue, PlatformAccessory, Service } from 'homebridge';
 
-import { computeSwitches, computeValves, type SwitchPlan } from './accessoryPlan';
+import {
+  computeSwitches,
+  computeValves,
+  GLOBAL_OVERRIDE_ZONE_ID,
+  type SwitchPlan,
+} from './accessoryPlan';
 import type { SmartIrrigationConfig } from './config';
 import type { HueClient } from './hue/client';
 import type { OverrideManager } from './overrideManager';
@@ -170,17 +175,7 @@ export class SmartIrrigationAccessory {
         this.accessory.addService(this.platform.Service.Switch, plan.displayName, plan.subtype);
       svc.setCharacteristic(this.platform.Characteristic.Name, plan.displayName);
       svc.getCharacteristic(this.platform.Characteristic.On).onSet(this.makeSwitchSetter(plan));
-      // Initial state: schedule reflects scheduler.isActive(); overrides default off.
-      const initial =
-        plan.kind === 'schedule'
-          ? this.deps.scheduler.isActive()
-          : plan.zoneId !== undefined
-            ? this.deps.overrideManager.isOverridden(
-                plan.zoneId,
-                plan.kind === 'wind-override' ? 'wind' : 'rain',
-              )
-            : false;
-      svc.updateCharacteristic(this.platform.Characteristic.On, initial);
+      svc.updateCharacteristic(this.platform.Characteristic.On, this.initialSwitchState(plan));
       this.switchServices.set(plan.subtype, svc);
     }
   }
@@ -250,6 +245,12 @@ export class SmartIrrigationAccessory {
           if (plan.zoneId !== undefined) {
             this.deps.overrideManager.setOverride(plan.zoneId, 'rain', on);
           }
+          break;
+        case 'wind-override-global':
+          this.deps.overrideManager.setOverride(GLOBAL_OVERRIDE_ZONE_ID, 'wind', on);
+          break;
+        case 'rain-override-global':
+          this.deps.overrideManager.setOverride(GLOBAL_OVERRIDE_ZONE_ID, 'rain', on);
           break;
       }
     };
@@ -380,9 +381,29 @@ export class SmartIrrigationAccessory {
 
   /** Mirror an override flip back to the corresponding Switch.On. Called from the platform's `onChange` wiring. */
   public syncOverrideSwitch(zoneId: string, kind: 'wind' | 'rain', active: boolean): void {
-    const subtype = kind === 'wind' ? `wind-override-${zoneId}` : `rain-override-${zoneId}`;
+    const subtype =
+      zoneId === GLOBAL_OVERRIDE_ZONE_ID ? `${kind}-override-global` : `${kind}-override-${zoneId}`;
     const svc = this.switchServices.get(subtype);
     svc?.updateCharacteristic(this.platform.Characteristic.On, active);
+  }
+
+  private initialSwitchState(plan: SwitchPlan): boolean {
+    switch (plan.kind) {
+      case 'schedule':
+        return this.deps.scheduler.isActive();
+      case 'wind-override':
+        return plan.zoneId !== undefined
+          ? this.deps.overrideManager.isOverridden(plan.zoneId, 'wind')
+          : false;
+      case 'rain-override':
+        return plan.zoneId !== undefined
+          ? this.deps.overrideManager.isOverridden(plan.zoneId, 'rain')
+          : false;
+      case 'wind-override-global':
+        return this.deps.overrideManager.isOverridden(GLOBAL_OVERRIDE_ZONE_ID, 'wind');
+      case 'rain-override-global':
+        return this.deps.overrideManager.isOverridden(GLOBAL_OVERRIDE_ZONE_ID, 'rain');
+    }
   }
 
   private updateIrrigationInUse(): void {

@@ -192,9 +192,19 @@
 
         <div class="form-grid two">
           <label
+            >Override switches in Apple Home
+            <select id="override-granularity">
+              <option value="per-zone">Per zone (one wind + one rain switch per zone)</option>
+              <option value="global">Global (one wind + one rain switch total)</option>
+              <option value="none">None (rely on manual valve open for one-off bypass)</option>
+            </select>
+          </label>
+          <label
             >Override auto-reset (minutes)
             <input type="number" id="override-reset-min" min="5" max="720" step="5" value="60" />
           </label>
+        </div>
+        <div class="form-grid two">
           <label
             >Wind unit (display)
             <select id="wind-unit">

@@ -8,6 +8,7 @@ import type {
   Service,
 } from 'homebridge';
 
+import { GLOBAL_OVERRIDE_ZONE_ID } from './accessoryPlan';
 import { evaluateZoneBlocking } from './blockingEngine';
 import { parseConfig, type SmartIrrigationConfig } from './config';
 import { HueClient } from './hue/client';
@@ -306,8 +307,13 @@ export class SmartIrrigationPlatform implements DynamicPlatformPlugin {
       this.parsedConfig.weather.consensusStrategy,
     );
 
-    const windOverridden = this.overrideManager.isOverridden(zoneId, 'wind');
-    const rainOverridden = this.overrideManager.isOverridden(zoneId, 'rain');
+    // Per-zone override OR the global "all zones" override exempts this zone.
+    const windOverridden =
+      this.overrideManager.isOverridden(zoneId, 'wind') ||
+      this.overrideManager.isOverridden(GLOBAL_OVERRIDE_ZONE_ID, 'wind');
+    const rainOverridden =
+      this.overrideManager.isOverridden(zoneId, 'rain') ||
+      this.overrideManager.isOverridden(GLOBAL_OVERRIDE_ZONE_ID, 'rain');
 
     const windBlocking = decision.wind?.blocked === true && !windOverridden;
     const rainBlocking = decision.rain?.blocked === true && !rainOverridden;

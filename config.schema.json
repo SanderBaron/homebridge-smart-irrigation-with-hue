@@ -320,6 +320,13 @@
             "maximum": 720,
             "default": 60,
             "description": "How long a manual wind/rain override switch stays on before snapping back."
+          },
+          "granularity": {
+            "title": "Override switches",
+            "type": "string",
+            "enum": ["per-zone", "global", "none"],
+            "default": "per-zone",
+            "description": "How many override switches Apple Home shows. per-zone = one wind + one rain switch per zone; global = one wind + one rain total; none = no override switches."
           }
         }
       },

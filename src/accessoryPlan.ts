@@ -1,6 +1,14 @@
 import type { SmartIrrigationConfig } from './config';
 
-export type SwitchKind = 'schedule' | 'wind-override' | 'rain-override';
+/** Sentinel zone id used by the OverrideManager to mean "applies to all zones". */
+export const GLOBAL_OVERRIDE_ZONE_ID = '__all__';
+
+export type SwitchKind =
+  | 'schedule'
+  | 'wind-override'
+  | 'rain-override'
+  | 'wind-override-global'
+  | 'rain-override-global';
 
 export interface SwitchPlan {
   /** Stable HomeKit sub-type — survives reboots and lets us match cached services. */
@@ -8,7 +16,7 @@ export interface SwitchPlan {
   /** Display name shown in Apple Home. */
   displayName: string;
   kind: SwitchKind;
-  /** Zone id this switch applies to. Absent for the schedule switch. */
+  /** Zone id this switch applies to. Absent for the schedule switch and global override switches. */
   zoneId?: string;
 }
 
@@ -42,6 +50,34 @@ export function computeSwitches(config: SmartIrrigationConfig): SwitchPlan[] {
       kind: 'schedule',
     });
   }
+
+  const granularity = config.override.granularity;
+  if (granularity === 'none') {
+    return out;
+  }
+
+  const anyWindBlocking = config.zones.some((z) => z.windBlocking?.enabled === true);
+  const anyRainBlocking = config.zones.some((z) => z.rainBlocking?.enabled === true);
+
+  if (granularity === 'global') {
+    if (anyWindBlocking) {
+      out.push({
+        subtype: 'wind-override-global',
+        displayName: 'Wind override (all zones)',
+        kind: 'wind-override-global',
+      });
+    }
+    if (anyRainBlocking) {
+      out.push({
+        subtype: 'rain-override-global',
+        displayName: 'Rain override (all zones)',
+        kind: 'rain-override-global',
+      });
+    }
+    return out;
+  }
+
+  // per-zone
   for (const zone of config.zones) {
     if (zone.windBlocking?.enabled === true) {
       out.push({
