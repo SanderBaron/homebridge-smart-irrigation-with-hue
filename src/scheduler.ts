@@ -458,12 +458,15 @@ export class Scheduler {
     }, run.durationMs);
     this.activeRuns.set(run.zoneId, timer);
 
-    if (!wasActive) {
-      void this.startZoneCb(run.zoneId, run.durationMs).catch((err: unknown) => {
-        this.log?.error('startZone(%s) failed: %s', run.zoneId, String(err));
-        this.cancelRun(run.zoneId);
-      });
-    }
+    // Always notify the start callback — even on an extension — so the
+    // accessory can reset *its* auto-close timer to match the new duration.
+    // Without this, the accessory's per-valve closeTimer (set at first open)
+    // closes the buddy on the original deadline regardless of how many
+    // run-with extensions the scheduler has issued.
+    void this.startZoneCb(run.zoneId, run.durationMs).catch((err: unknown) => {
+      this.log?.error('startZone(%s) failed: %s', run.zoneId, String(err));
+      this.cancelRun(run.zoneId);
+    });
 
     // Lazy run-with expansion: pull in each buddy zone now that the trigger
     // zone is actually starting fresh. We skip expansion on extension

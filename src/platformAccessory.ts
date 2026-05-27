@@ -348,7 +348,24 @@ export class SmartIrrigationAccessory {
     }
 
     if (state.active) {
-      this.platform.log.debug('Zone %s already active; ignoring open request', zoneId);
+      // Re-open while already active = extension (the scheduler renewed the
+      // run, typically because a later step pulled this zone in again via
+      // run-with). The Hue valve is already on, so skip the network call;
+      // just reset the auto-close timer so we don't close at the original
+      // deadline.
+      if (state.closeTimer !== undefined) {
+        clearTimeout(state.closeTimer);
+      }
+      state.startedAt = Date.now();
+      state.closeTimer = setTimeout(() => {
+        void this.closeValve(zoneId, 'duration-expired');
+      }, durationMs);
+      this.platform.log.debug(
+        'Zone "%s" already active; extending close timer (%s, %d sec)',
+        zone.name,
+        source,
+        durationMs / 1000,
+      );
       return;
     }
 
