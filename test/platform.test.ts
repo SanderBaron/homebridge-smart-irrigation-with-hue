@@ -6,6 +6,6 @@ describe('plugin identifiers', () => {
   });
 
   it('exposes the npm package name used by Homebridge', () => {
-    expect(PLUGIN_NAME).toBe('homebridge-weather-smart-irrigation');
+    expect(PLUGIN_NAME).toBe('homebridge-smart-irrigation-with-hue');
   });
 });
