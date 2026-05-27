@@ -198,17 +198,38 @@ export class Scheduler {
   }
 
   /**
-   * Restore the per-entry "fired today" map from persistent state. Stale
-   * entries (date keys older than today) are dropped so they don't suppress
-   * legitimate firings.
+   * Restore the per-entry "fired today" map from persistent state. Drops
+   * entries that are stale for two distinct reasons:
+   *
+   * 1. The date key is not today (a previous day's record).
+   * 2. The entry id no longer exists in the current schedule (deleted).
+   * 3. The entry's current `startTime` is still in the future today — the
+   *    persisted record is from a previous configuration (the user edited
+   *    the start time later in the day), so the "fired today" claim
+   *    doesn't match the live entry and would otherwise wrongly suppress
+   *    the new firing.
+   *
+   * `setEntries` must be called *before* this method so the live entry
+   * shapes are available.
    */
   public restoreFiredToday(map: Record<string, string>, now: Date = this.nowFn()): void {
     const today = formatDateKey(now);
+    const nowMinutes = hhmmToMinutes(formatHHMM(now));
     this.firedToday.clear();
     for (const [entryId, dateKey] of Object.entries(map)) {
-      if (dateKey === today) {
-        this.firedToday.set(entryId, dateKey);
+      if (dateKey !== today) {
+        continue;
       }
+      const entry = this.entries.find((e) => e.id === entryId);
+      if (entry === undefined) {
+        continue;
+      }
+      if (hhmmToMinutes(entry.startTime) > nowMinutes) {
+        // Entry's current start time hasn't been reached yet today —
+        // the persisted firing is from a previous config; ignore.
+        continue;
+      }
+      this.firedToday.set(entryId, dateKey);
     }
   }
 
