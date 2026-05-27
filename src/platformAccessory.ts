@@ -211,9 +211,15 @@ export class SmartIrrigationAccessory {
    * and `ConfiguredName` (the user-editable label Apple Home shows). Without
    * `ConfiguredName`, Apple Home often falls back to the accessory's display
    * name — which is why every valve was showing up as "Smart Irrigation".
+   *
+   * `ConfiguredName` is not part of the optional-characteristics list for
+   * Valve/Switch/IrrigationSystem in HAP-NodeJS's service definitions, so we
+   * declare it as optional first. Without that call Homebridge logs a warning
+   * about "Adding anyway" even though it works.
    */
   private applyDisplayName(svc: Service, displayName: string): void {
     svc.setCharacteristic(this.platform.Characteristic.Name, displayName);
+    svc.addOptionalCharacteristic(this.platform.Characteristic.ConfiguredName);
     const configured = svc.getCharacteristic(this.platform.Characteristic.ConfiguredName);
     configured.setProps({ perms: configured.props.perms });
     configured.updateValue(displayName);
