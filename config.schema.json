@@ -4,7 +4,7 @@
   "singular": true,
   "customUi": true,
   "headerDisplay": "Weather-aware Homebridge irrigation platform driving Philips Hue smart sockets. The custom UI is the recommended way to configure this plugin — the schema below is a fallback for users who prefer to edit `config.json` directly.",
-  "footerDisplay": "See the [README](https://github.com/SanderBaron/homebridge-weather-smart-irrigation#readme) for setup and troubleshooting.",
+  "footerDisplay": "See the [README](https://github.com/SanderBaron/homebridge-smart-irrigation-with-hue#readme) for setup and troubleshooting.",
   "schema": {
     "type": "object",
     "required": ["name", "location"],

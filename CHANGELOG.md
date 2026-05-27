@@ -5,9 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.0] — 2026-05-27
 
-### Added
+Initial public release. Renamed the package to **homebridge-smart-irrigation-with-hue** ahead of npm publish. Bundles every feature delivered in phases 1–11 plus the post-Phase-11 polish.
+
+### Added (since the spec)
 
 - Initial project scaffold: TypeScript strict mode, ESLint, Prettier, Jest, GitHub Actions CI.
 - Platform stub registering as `SmartIrrigation` so Homebridge can load the plugin without errors.

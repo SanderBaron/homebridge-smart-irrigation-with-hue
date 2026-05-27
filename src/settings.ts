@@ -5,4 +5,4 @@
  */
 
 export const PLATFORM_NAME = 'SmartIrrigation';
-export const PLUGIN_NAME = 'homebridge-weather-smart-irrigation';
+export const PLUGIN_NAME = 'homebridge-smart-irrigation-with-hue';

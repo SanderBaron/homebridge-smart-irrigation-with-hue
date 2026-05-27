@@ -1,18 +1,18 @@
 {
-  "name": "homebridge-weather-smart-irrigation",
-  "displayName": "Smart Irrigation",
+  "name": "homebridge-smart-irrigation-with-hue",
+  "displayName": "Smart Irrigation with Hue",
   "version": "0.1.0",
   "description": "Weather-aware, fully configurable Homebridge irrigation platform driving Philips Hue smart sockets.",
   "license": "MIT",
   "author": "Sander Baron",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/SanderBaron/homebridge-weather-smart-irrigation.git"
+    "url": "git+https://github.com/SanderBaron/homebridge-smart-irrigation-with-hue.git"
   },
   "bugs": {
-    "url": "https://github.com/SanderBaron/homebridge-weather-smart-irrigation/issues"
+    "url": "https://github.com/SanderBaron/homebridge-smart-irrigation-with-hue/issues"
   },
-  "homepage": "https://github.com/SanderBaron/homebridge-weather-smart-irrigation#readme",
+  "homepage": "https://github.com/SanderBaron/homebridge-smart-irrigation-with-hue#readme",
   "keywords": [
     "homebridge-plugin",
     "homebridge",
