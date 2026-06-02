@@ -1,7 +1,7 @@
 {
   "name": "homebridge-smart-irrigation-with-hue",
   "displayName": "Smart Irrigation with Hue",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Weather-aware, fully configurable Homebridge irrigation platform driving Philips Hue smart sockets.",
   "license": "MIT",
   "author": "Sander Baron",
