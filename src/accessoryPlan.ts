@@ -7,7 +7,6 @@ export type SwitchKind =
   | 'schedule'
   | 'run-now'
   | 'wind-override'
-  | 'rain-override'
   | 'wind-override-global'
   | 'rain-override-global';
 
@@ -33,10 +32,14 @@ export interface ValvePlan {
  * Pure projection: given a parsed config, return the list of HomeKit Switch
  * services that should exist on the accessory.
  *
- * Rules from the spec:
- * - One "Activate Schedule" switch when at least one schedule entry exists.
- * - One "Wind override: <zone>" switch per zone with wind blocking enabled.
- * - One "Rain override: <zone>" switch per zone with rain blocking enabled.
+ * Rules:
+ * - One "Activate Schedule" + one "Run Schedule Now" switch when at least
+ *   one schedule entry exists.
+ * - Wind blocking is per-zone, so wind overrides follow the configured
+ *   granularity (per-zone / global / none).
+ * - Rain blocking is global (single config), so there is at most ONE rain
+ *   override switch regardless of granularity. `granularity: 'none'`
+ *   suppresses it; everything else exposes it when rain blocking is enabled.
  *
  * Returning this as a pure list keeps the platform's add/remove diffing
  * straightforward and lets us unit-test the planning logic without touching
@@ -63,7 +66,7 @@ export function computeSwitches(config: SmartIrrigationConfig): SwitchPlan[] {
   }
 
   const anyWindBlocking = config.zones.some((z) => z.windBlocking?.enabled === true);
-  const anyRainBlocking = config.zones.some((z) => z.rainBlocking?.enabled === true);
+  const rainBlockingEnabled = config.rain?.enabled === true;
 
   if (granularity === 'global') {
     if (anyWindBlocking) {
@@ -73,35 +76,31 @@ export function computeSwitches(config: SmartIrrigationConfig): SwitchPlan[] {
         kind: 'wind-override-global',
       });
     }
-    if (anyRainBlocking) {
-      out.push({
-        subtype: 'rain-override-global',
-        displayName: 'Rain override (all zones)',
-        kind: 'rain-override-global',
-      });
+  } else {
+    // per-zone wind overrides
+    for (const zone of config.zones) {
+      if (zone.windBlocking?.enabled === true) {
+        out.push({
+          subtype: `wind-override-${zone.id}`,
+          displayName: `Wind override: ${zone.name}`,
+          kind: 'wind-override',
+          zoneId: zone.id,
+        });
+      }
     }
-    return out;
   }
 
-  // per-zone
-  for (const zone of config.zones) {
-    if (zone.windBlocking?.enabled === true) {
-      out.push({
-        subtype: `wind-override-${zone.id}`,
-        displayName: `Wind override: ${zone.name}`,
-        kind: 'wind-override',
-        zoneId: zone.id,
-      });
-    }
-    if (zone.rainBlocking?.enabled === true) {
-      out.push({
-        subtype: `rain-override-${zone.id}`,
-        displayName: `Rain override: ${zone.name}`,
-        kind: 'rain-override',
-        zoneId: zone.id,
-      });
-    }
+  // Rain is global by configuration — always a single switch when enabled,
+  // regardless of the per-zone vs global granularity setting (which now only
+  // governs wind).
+  if (rainBlockingEnabled) {
+    out.push({
+      subtype: 'rain-override-global',
+      displayName: 'Rain override',
+      kind: 'rain-override-global',
+    });
   }
+
   return out;
 }
 

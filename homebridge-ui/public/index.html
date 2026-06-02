@@ -190,12 +190,35 @@
           </label>
         </div>
 
+        <h3>Rain skip (global)</h3>
+        <p class="hint">
+          Rain falls the same everywhere on a single irrigation rig, so rain blocking is one
+          shared setting for all zones. Wind blocking is still per zone, in the Zones section.
+        </p>
+        <div class="form-row">
+          <label class="toggle">
+            <input type="checkbox" id="rain-enabled" />
+            Skip watering when it has been raining or is forecast to rain
+          </label>
+        </div>
         <div class="form-grid two">
           <label
-            >Override switches in Apple Home
+            >Past 24h threshold (mm)
+            <input type="number" id="rain-past24h" min="0" max="200" step="0.5" value="5" />
+          </label>
+          <label
+            >Forecast next 12h threshold (mm)
+            <input type="number" id="rain-next12h" min="0" max="200" step="0.5" value="2" />
+          </label>
+        </div>
+
+        <h3>Override switches in Apple Home</h3>
+        <div class="form-grid two">
+          <label
+            >Granularity
             <select id="override-granularity">
-              <option value="per-zone">Per zone (one wind + one rain switch per zone)</option>
-              <option value="global">Global (one wind + one rain switch total)</option>
+              <option value="per-zone">Per zone (one wind switch per zone)</option>
+              <option value="global">Global (one wind switch total)</option>
               <option value="none">None (rely on manual valve open for one-off bypass)</option>
             </select>
           </label>

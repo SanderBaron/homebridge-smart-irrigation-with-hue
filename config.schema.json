@@ -174,34 +174,35 @@
                   "description": "Stored in m/s. The UI handles km/h / mph / knots / Beaufort conversion."
                 }
               }
-            },
-            "rainBlocking": {
-              "title": "Rain skip",
-              "type": "object",
-              "properties": {
-                "enabled": {
-                  "title": "Enabled",
-                  "type": "boolean",
-                  "default": false
-                },
-                "past24hThresholdMm": {
-                  "title": "Past 24h threshold (mm)",
-                  "type": "number",
-                  "minimum": 0,
-                  "maximum": 200,
-                  "default": 0,
-                  "description": "Skip watering when total rainfall in the last 24 hours meets or exceeds this."
-                },
-                "next12hThresholdMm": {
-                  "title": "Forecast 12h threshold (mm)",
-                  "type": "number",
-                  "minimum": 0,
-                  "maximum": 200,
-                  "default": 0,
-                  "description": "Skip watering when forecast rainfall in the next 12 hours meets or exceeds this."
-                }
-              }
             }
+          }
+        }
+      },
+      "rain": {
+        "title": "Rain skip (global)",
+        "type": "object",
+        "description": "Global rain blocking — applies to every zone. Rain falls the same everywhere on a single irrigation rig, so there is one shared setting.",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean",
+            "default": false
+          },
+          "past24hThresholdMm": {
+            "title": "Past 24h threshold (mm)",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 200,
+            "default": 0,
+            "description": "Skip watering when total rainfall in the last 24 hours meets or exceeds this."
+          },
+          "next12hThresholdMm": {
+            "title": "Forecast 12h threshold (mm)",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 200,
+            "default": 0,
+            "description": "Skip watering when forecast rainfall in the next 12 hours meets or exceeds this."
           }
         }
       },

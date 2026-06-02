@@ -321,11 +321,6 @@ export class SmartIrrigationAccessory {
             this.deps.overrideManager.setOverride(plan.zoneId, 'wind', on);
           }
           break;
-        case 'rain-override':
-          if (plan.zoneId !== undefined) {
-            this.deps.overrideManager.setOverride(plan.zoneId, 'rain', on);
-          }
-          break;
         case 'wind-override-global':
           this.deps.overrideManager.setOverride(GLOBAL_OVERRIDE_ZONE_ID, 'wind', on);
           break;
@@ -507,10 +502,6 @@ export class SmartIrrigationAccessory {
       case 'wind-override':
         return plan.zoneId !== undefined
           ? this.deps.overrideManager.isOverridden(plan.zoneId, 'wind')
-          : false;
-      case 'rain-override':
-        return plan.zoneId !== undefined
-          ? this.deps.overrideManager.isOverridden(plan.zoneId, 'rain')
           : false;
       case 'wind-override-global':
         return this.deps.overrideManager.isOverridden(GLOBAL_OVERRIDE_ZONE_ID, 'wind');

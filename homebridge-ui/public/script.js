@@ -22,18 +22,17 @@ const ZONE_TYPES = [
   ['other', 'Other'],
 ];
 
+// Per-zone wind defaults seeded when a new zone is created or its type changes.
+// Rain is global (one shared setting) from v0.2 — see #section-weather in the UI.
 const TYPE_DEFAULTS = {
   sprinkler: {
     wind: { enabled: true, blockedOctants: ['NW', 'N', 'NE'], minimumWindSpeedMs: 6 },
-    rain: { enabled: true, past24hThresholdMm: 5, next12hThresholdMm: 2 },
   },
   dripLine: {
     wind: { enabled: false, blockedOctants: [], minimumWindSpeedMs: 0 },
-    rain: { enabled: true, past24hThresholdMm: 8, next12hThresholdMm: 4 },
   },
   microSpray: {
     wind: { enabled: true, blockedOctants: ['NW', 'N', 'NE', 'E', 'SE'], minimumWindSpeedMs: 8 },
-    rain: { enabled: true, past24hThresholdMm: 5, next12hThresholdMm: 2 },
   },
   mist: {
     wind: {
@@ -41,11 +40,9 @@ const TYPE_DEFAULTS = {
       blockedOctants: ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'],
       minimumWindSpeedMs: 4,
     },
-    rain: { enabled: true, past24hThresholdMm: 3, next12hThresholdMm: 1 },
   },
   other: {
     wind: { enabled: false, blockedOctants: [], minimumWindSpeedMs: 0 },
-    rain: { enabled: false, past24hThresholdMm: 0, next12hThresholdMm: 0 },
   },
 };
 
@@ -64,6 +61,7 @@ function defaultConfig() {
     location: { latitude: 52.37, longitude: 4.89, name: '' },
     zones: [],
     schedule: [],
+    rain: { enabled: false, past24hThresholdMm: 5, next12hThresholdMm: 2 },
     weather: {
       sources: ['open-meteo', 'buienradar'],
       openWeatherMapApiKey: '',
@@ -164,7 +162,13 @@ function applyThemeFromHomebridge() {
 
 function mergeDefaults(cfg) {
   const base = defaultConfig();
-  const zones = Array.isArray(cfg.zones) ? cfg.zones.map(migrateZone) : [];
+  const rawZones = Array.isArray(cfg.zones) ? cfg.zones : [];
+  // v0.2 migration: rain was per-zone in v0.1; consolidate to a single global
+  // config taking the strictest (lowest non-zero) thresholds across all zones
+  // that had rain blocking enabled. The top-level `cfg.rain`, when present,
+  // wins outright.
+  const migratedRain = migrateGlobalRain(cfg.rain, rawZones);
+  const zones = rawZones.map(migrateZone);
   const schedule = Array.isArray(cfg.schedule) ? cfg.schedule.map(migrateEntry) : [];
   return {
     ...base,
@@ -173,6 +177,7 @@ function mergeDefaults(cfg) {
     location: { ...base.location, ...(cfg.location || {}) },
     weather: { ...base.weather, ...(cfg.weather || {}) },
     override: { ...base.override, ...(cfg.override || {}) },
+    rain: migratedRain,
     pump: cfg.pump || undefined,
     zones,
     schedule,
@@ -188,10 +193,45 @@ function migrateZone(zone) {
   if ('concurrencyGroup' in clean) {
     delete clean.concurrencyGroup;
   }
+  // v0.2: rain blocking is global, never on a zone.
+  if ('rainBlocking' in clean) {
+    delete clean.rainBlocking;
+  }
   if (!Array.isArray(clean.runWith)) {
     clean.runWith = [];
   }
   return clean;
+}
+
+/**
+ * Resolve the global rain config. If a top-level `rain` block is present, use
+ * it as-is. Otherwise migrate from any legacy per-zone `rainBlocking`
+ * entries — strictest (lowest non-zero) thresholds across all enabled entries
+ * become the new global thresholds.
+ */
+function migrateGlobalRain(topLevel, rawZones) {
+  if (topLevel && typeof topLevel === 'object') {
+    return {
+      enabled: Boolean(topLevel.enabled),
+      past24hThresholdMm: Number(topLevel.past24hThresholdMm) || 0,
+      next12hThresholdMm: Number(topLevel.next12hThresholdMm) || 0,
+    };
+  }
+  const legacy = rawZones
+    .map((z) => (z && typeof z === 'object' ? z.rainBlocking : null))
+    .filter((r) => r && typeof r === 'object' && r.enabled);
+  if (legacy.length === 0) {
+    return { enabled: false, past24hThresholdMm: 5, next12hThresholdMm: 2 };
+  }
+  const minNonZero = (vals) => {
+    const pos = vals.filter((v) => v > 0);
+    return pos.length === 0 ? 0 : Math.min(...pos);
+  };
+  return {
+    enabled: true,
+    past24hThresholdMm: minNonZero(legacy.map((r) => Number(r.past24hThresholdMm) || 0)),
+    next12hThresholdMm: minNonZero(legacy.map((r) => Number(r.next12hThresholdMm) || 0)),
+  };
 }
 
 // ============================================================ wiring
@@ -290,6 +330,11 @@ function hydrateForm() {
   setValue('consensus-strategy', c.weather.consensusStrategy || 'majority');
   setValue('weather-cache-min', c.weather.cacheMinutes || 10);
 
+  const rain = c.rain || { enabled: false, past24hThresholdMm: 5, next12hThresholdMm: 2 };
+  document.getElementById('rain-enabled').checked = !!rain.enabled;
+  setValue('rain-past24h', rain.past24hThresholdMm ?? 5);
+  setValue('rain-next12h', rain.next12hThresholdMm ?? 2);
+
   setValue('override-reset-min', c.override.autoResetMinutes || 60);
   setValue('override-granularity', c.override.granularity || 'per-zone');
   setValue('wind-unit', c.windUnit || 'm/s');
@@ -341,6 +386,12 @@ function serialise() {
   c.weather.consensusStrategy = readValue('consensus-strategy', 'string');
   c.weather.cacheMinutes = Math.max(1, Number(readValue('weather-cache-min', 'number') || 10));
 
+  c.rain = {
+    enabled: document.getElementById('rain-enabled').checked,
+    past24hThresholdMm: Math.max(0, Number(readValue('rain-past24h', 'number') || 0)),
+    next12hThresholdMm: Math.max(0, Number(readValue('rain-next12h', 'number') || 0)),
+  };
+
   c.override.autoResetMinutes = Math.max(
     5,
     Number(readValue('override-reset-min', 'number') || 60),
@@ -369,7 +420,6 @@ function makeNewZone() {
     hueLightId: '',
     runWith: [],
     windBlocking: JSON.parse(JSON.stringify(defaults.wind)),
-    rainBlocking: JSON.parse(JSON.stringify(defaults.rain)),
   };
 }
 
@@ -438,19 +488,7 @@ function buildZoneCard(zone, idx) {
         <span>Blocked when wind is from:</span>
         <div class="octant-row" data-zone-octants>${octantBoxes}</div>
       </fieldset>
-      <fieldset>
-        <legend>
-          <label class="toggle"><input type="checkbox" data-field="rainEnabled" ${zone.rainBlocking.enabled ? 'checked' : ''} /> Rain skip</label>
-        </legend>
-        <div class="form-grid two">
-          <label>Past 24h threshold (mm)
-            <input type="number" data-field="rainPast" min="0" max="100" step="0.5" value="${zone.rainBlocking.past24hThresholdMm}" />
-          </label>
-          <label>Forecast 12h threshold (mm)
-            <input type="number" data-field="rainNext" min="0" max="100" step="0.5" value="${zone.rainBlocking.next12hThresholdMm}" />
-          </label>
-        </div>
-      </fieldset>
+      <p class="hint">Rain blocking is configured globally in the <em>Weather &amp; blocking</em> section — it applies to every zone equally.</p>
     </div>
   `;
 
@@ -473,17 +511,17 @@ function buildZoneCard(zone, idx) {
     });
   });
 
-  // Apply smart defaults when type changes (after first user choice)
+  // Apply smart defaults when type changes (after first user choice).
+  // Only wind defaults are per-type now — rain is a single global setting.
   card.querySelector('[data-field="type"]').addEventListener('change', (e) => {
     const newType = e.target.value;
     if (
       confirmModalSync(
-        `Apply default wind / rain settings for type "${newType}"? Your current settings will be overwritten.`,
+        `Apply default wind settings for type "${newType}"? Your current wind settings will be overwritten.`,
       )
     ) {
       const d = TYPE_DEFAULTS[newType];
       state.config.zones[idx].windBlocking = JSON.parse(JSON.stringify(d.wind));
-      state.config.zones[idx].rainBlocking = JSON.parse(JSON.stringify(d.rain));
       renderZones();
     }
   });
@@ -510,15 +548,6 @@ function writeZoneField(idx, el) {
       break;
     case 'windMinMs':
       z.windBlocking.minimumWindSpeedMs = Number(val);
-      break;
-    case 'rainEnabled':
-      z.rainBlocking.enabled = Boolean(val);
-      break;
-    case 'rainPast':
-      z.rainBlocking.past24hThresholdMm = Number(val);
-      break;
-    case 'rainNext':
-      z.rainBlocking.next12hThresholdMm = Number(val);
       break;
   }
 }

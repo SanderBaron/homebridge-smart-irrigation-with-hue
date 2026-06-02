@@ -75,11 +75,12 @@ Tick **Pump present** if your system has a central pump on a Hue smart socket. Y
 Click **Add zone** for each watering area. Per zone:
 
 - **Name** — shown in Apple Home (e.g. "Noord", "Voortuin").
-- **Type** — sprinkler / drip line / micro-spray / mist / other. Picking a type loads sensible wind + rain blocking defaults for that hardware. You can override anything afterwards.
+- **Type** — sprinkler / drip line / micro-spray / mist / other. Picking a type loads sensible wind blocking defaults for that hardware. You can override anything afterwards.
 - **Hue outlet** — pick from the detected lights/sockets.
 - **Run alongside this zone** — tick any _other_ zones that should automatically start when this zone starts (manual _or_ scheduled). Useful for e.g. a drip line that always rides along with whichever sprinkler is running.
 - **Wind blocking** (optional) — minimum wind speed (m/s, stored internally; UI can show km/h, mph, knots or Beaufort) and which compass octants block the zone. Wind comes _from_ the ticked octant → zone won't fire when scheduled.
-- **Rain skip** (optional) — past-24h and next-12h rainfall thresholds in mm. Either crossing → zone won't fire when scheduled.
+
+Rain skip is configured **globally** in the _Weather & blocking_ section — rain falls the same everywhere on a single irrigation rig.
 
 ### 5. Schedule
 
@@ -102,9 +103,10 @@ The "Activate Schedule" switch in Apple Home is the master enable: when **on**, 
   - `majority` — block when most active sources agree (default).
   - `all` — block only when _every_ active source agrees.
 - **Cache (minutes)** — how long to memoise weather data between fetches. Default 10.
-- **Override switches**:
-  - `per-zone` — one wind switch + one rain switch _per zone_ in Apple Home.
-  - `global` — one wind switch + one rain switch _total_.
+- **Rain skip (global)** — one shared setting for the whole rig: past-24h threshold (mm), next-12h forecast threshold (mm), and an enable toggle. Either threshold crossing → no zone fires when scheduled.
+- **Override switches** (apply only to wind — rain is always a single switch when enabled):
+  - `per-zone` — one wind switch _per zone_ in Apple Home, plus the single global rain switch when rain blocking is on.
+  - `global` — one wind switch _total_, plus the single global rain switch.
   - `none` — no override switches; manual valve opens still bypass blocks.
 - **Override auto-reset** — how long an enabled override stays on before snapping back. Default 60 min.
 - **Wind unit (display)** — `m/s`, `km/h`, `mph`, `kts`, or `Bft`. Internal storage and calculations always use m/s; the unit only affects what the UI and logs show you.
@@ -121,7 +123,7 @@ After save + Homebridge restart, Apple Home picks up:
 - A **Smart Irrigation with Hue** tile containing one Valve per zone (and the Irrigation System sub-services HomeKit needs).
 - An **Activate Schedule** switch.
 - A **Run Schedule Now** switch — momentary trigger that turns _on_ while a manual run is in progress, and that you can tap _off_ to abort.
-- Zero, one, or many wind/rain **override** switches, depending on your granularity setting.
+- Zero, one, or many **wind override** switches, depending on your granularity setting (per-zone or global), plus a single **rain override** switch when global rain blocking is on.
 
 **Tip — display layout:** Apple Home sometimes renders the Irrigation System sub-services as ghost tiles if you choose "Include in a single tile". If you see unnamed irrigation tiles you can't tap, switch the tile to "Show as separate tile" instead.
 

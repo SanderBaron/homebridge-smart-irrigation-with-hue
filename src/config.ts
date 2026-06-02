@@ -41,6 +41,14 @@ export interface SmartIrrigationConfig {
   pump?: PumpConfig;
   zones: Zone[];
   schedule: ScheduleEntry[];
+  /**
+   * Global rain blocking. Applies to every zone equally — rain falls the same
+   * everywhere on a single irrigation rig. Absent or `enabled: false` means
+   * rain never blocks watering. Replaces the v0.1 per-zone `rainBlocking`
+   * field; the parser migrates legacy configs by taking the strictest (lowest
+   * non-zero) threshold across all zones that had rain enabled.
+   */
+  rain?: RainBlockingConfig;
   weather: {
     sources: WeatherSourceName[];
     openWeatherMapApiKey?: string;
@@ -107,9 +115,10 @@ export function parseConfig(raw: PlatformConfig): ParseResult {
     location.name = locationName;
   }
 
-  const zones = parseZones(r['zones']);
+  const { zones, legacyRainConfigs } = parseZones(r['zones']);
   const schedule = parseSchedule(r['schedule'], new Set(zones.map((z) => z.id)));
   const pump = parsePump(r['pump'], new Set(zones.map((z) => z.id)));
+  const rain = parseRain(r['rain'], legacyRainConfigs);
 
   const weatherRaw = isRecord(r['weather']) ? r['weather'] : {};
   const requestedSources = parseStringArray(weatherRaw['sources']);
@@ -154,16 +163,24 @@ export function parseConfig(raw: PlatformConfig): ParseResult {
   if (pump !== undefined) {
     config.pump = pump;
   }
+  if (rain !== undefined) {
+    config.rain = rain;
+  }
   return { ok: true, config };
 }
 
-function parseZones(raw: unknown): Zone[] {
+function parseZones(raw: unknown): {
+  zones: Zone[];
+  /** Legacy per-zone rain configs picked up for top-level migration. */
+  legacyRainConfigs: RainBlockingConfig[];
+} {
   if (!Array.isArray(raw)) {
-    return [];
+    return { zones: [], legacyRainConfigs: [] };
   }
   // First pass: build the list with id-only references retained; second pass
   // filters runWith down to ids we actually know about (no dangling pointers).
   const out: Zone[] = [];
+  const legacyRainConfigs: RainBlockingConfig[] = [];
   const seenIds = new Set<string>();
   for (const item of raw) {
     if (!isRecord(item)) {
@@ -186,9 +203,11 @@ function parseZones(raw: unknown): Zone[] {
     if (wind !== undefined) {
       zone.windBlocking = wind;
     }
-    const rain = parseRainBlocking(item['rainBlocking']);
-    if (rain !== undefined) {
-      zone.rainBlocking = rain;
+    // Rain was per-zone in v0.1 — pick the config up here so the top-level
+    // parser can migrate it, but never write it back onto the zone in v0.2+.
+    const legacyRain = parseRainBlocking(item['rainBlocking']);
+    if (legacyRain !== undefined) {
+      legacyRainConfigs.push(legacyRain);
     }
     out.push(zone);
   }
@@ -203,7 +222,7 @@ function parseZones(raw: unknown): Zone[] {
       }
     }
   }
-  return out;
+  return { zones: out, legacyRainConfigs };
 }
 
 function parseWindBlocking(raw: unknown): WindBlockingConfig | undefined {
@@ -226,6 +245,40 @@ function parseRainBlocking(raw: unknown): RainBlockingConfig | undefined {
     enabled: booleanOr(raw['enabled'], false),
     past24hThresholdMm: numberOr(raw['past24hThresholdMm'], 0),
     next12hThresholdMm: numberOr(raw['next12hThresholdMm'], 0),
+  };
+}
+
+/**
+ * Resolve the global rain blocking config.
+ *
+ * Priority:
+ * 1. A top-level `rain` block in the raw config wins outright.
+ * 2. Otherwise, if any zones carried a legacy v0.1 `rainBlocking` entry,
+ *    migrate by taking the strictest (minimum non-zero) thresholds across all
+ *    *enabled* legacy entries — the safest choice per the spec: any zone that
+ *    used to stop at 1 mm should still stop at 1 mm globally.
+ * 3. Otherwise return `undefined` (no rain blocking active).
+ */
+function parseRain(
+  rawTopLevel: unknown,
+  legacyRainConfigs: RainBlockingConfig[],
+): RainBlockingConfig | undefined {
+  const direct = parseRainBlocking(rawTopLevel);
+  if (direct !== undefined) {
+    return direct;
+  }
+  const enabledLegacy = legacyRainConfigs.filter((c) => c.enabled);
+  if (enabledLegacy.length === 0) {
+    return undefined;
+  }
+  const minNonZero = (values: number[]): number => {
+    const positives = values.filter((v) => v > 0);
+    return positives.length === 0 ? 0 : Math.min(...positives);
+  };
+  return {
+    enabled: true,
+    past24hThresholdMm: minNonZero(enabledLegacy.map((c) => c.past24hThresholdMm)),
+    next12hThresholdMm: minNonZero(enabledLegacy.map((c) => c.next12hThresholdMm)),
   };
 }
 

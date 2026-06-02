@@ -1,6 +1,6 @@
 import { applyConsensus, type ConsensusDecision } from './weather/consensus';
 import type { ConsensusStrategy, ConsensusVote, WeatherSnapshot } from './weather/types';
-import type { CompassOctant, Zone } from './types';
+import type { CompassOctant, RainBlockingConfig, Zone } from './types';
 
 const OCTANTS: readonly CompassOctant[] = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 
@@ -61,22 +61,26 @@ export function evaluateWindBlocking(
 }
 
 /**
- * Evaluate the rain-skip condition for a zone across all available weather
+ * Evaluate the global rain-skip condition across all available weather
  * snapshots, then combine the per-source votes with the given consensus
  * strategy.
+ *
+ * Rain blocking is global (not per-zone) from v0.2 onward — rain falls the
+ * same everywhere on a single irrigation rig. The verdict applies to every
+ * zone the platform asks about.
  *
  * A source abstains when it has neither past-24h nor next-12h rainfall. A
  * source's vote is `blocked: true` when at least one available value meets or
  * exceeds the corresponding threshold.
  *
- * Returns `undefined` when rain blocking is disabled for the zone.
+ * Returns `undefined` when rain blocking is disabled (no config or
+ * `enabled: false`).
  */
 export function evaluateRainBlocking(
-  zone: Zone,
+  cfg: RainBlockingConfig | undefined,
   snapshots: WeatherSnapshot[],
   strategy: ConsensusStrategy,
 ): ConsensusDecision | undefined {
-  const cfg = zone.rainBlocking;
   if (!cfg?.enabled) {
     return undefined;
   }
@@ -127,11 +131,12 @@ export interface ZoneBlockingDecision {
  */
 export function evaluateZoneBlocking(
   zone: Zone,
+  rainCfg: RainBlockingConfig | undefined,
   snapshots: WeatherSnapshot[],
   strategy: ConsensusStrategy,
 ): ZoneBlockingDecision {
   const wind = evaluateWindBlocking(zone, snapshots, strategy);
-  const rain = evaluateRainBlocking(zone, snapshots, strategy);
+  const rain = evaluateRainBlocking(rainCfg, snapshots, strategy);
   const blocked = (wind?.blocked ?? false) || (rain?.blocked ?? false);
 
   const decision: ZoneBlockingDecision = { blocked };

@@ -116,8 +116,6 @@ describe('pairWithBridge', () => {
 
   it('exposes errors as HueError instances', async () => {
     const fetchImpl = mockFetchOk([{ error: { type: 101, address: '', description: 'x' } }]);
-    await expect(pairWithBridge({ ip: '192.0.2.1', fetchImpl })).rejects.toBeInstanceOf(
-      HueError,
-    );
+    await expect(pairWithBridge({ ip: '192.0.2.1', fetchImpl })).rejects.toBeInstanceOf(HueError);
   });
 });

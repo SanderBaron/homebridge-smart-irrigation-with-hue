@@ -68,7 +68,7 @@ describe('parseConfig — zones', () => {
     expect(result.config.zones[0]?.name).toBe('First');
   });
 
-  it('parses wind, rain, and run-with relationships', () => {
+  it('parses wind and run-with relationships, never writes rainBlocking onto a zone', () => {
     const result = parseConfig(
       asConfig({
         location: BASE_LOCATION,
@@ -84,6 +84,7 @@ describe('parseConfig — zones', () => {
               blockedOctants: ['N', 'NE', 'invalid'],
               minimumWindSpeedMs: 6,
             },
+            // Legacy v0.1 rain config — should NOT survive onto the zone in v0.2+.
             rainBlocking: { enabled: true, past24hThresholdMm: 5, next12hThresholdMm: 2 },
           },
           { id: 'z2', name: 'B', hueLightId: '2' },
@@ -94,12 +95,12 @@ describe('parseConfig — zones', () => {
     if (!result.ok) {
       return;
     }
-    const z = result.config.zones[0];
-    // Unknown zone id is filtered; self-reference is stripped.
-    expect(z?.runWith).toEqual(['z2']);
-    expect(z?.windBlocking?.blockedOctants).toEqual(['N', 'NE']);
-    expect(z?.windBlocking?.minimumWindSpeedMs).toBe(6);
-    expect(z?.rainBlocking?.past24hThresholdMm).toBe(5);
+    const z = result.config.zones[0] as unknown as Record<string, unknown>;
+    expect((z as { runWith?: string[] }).runWith).toEqual(['z2']);
+    expect(
+      (z as { windBlocking?: { blockedOctants: string[] } }).windBlocking?.blockedOctants,
+    ).toEqual(['N', 'NE']);
+    expect('rainBlocking' in z).toBe(false);
   });
 
   it('drops empty runWith arrays so the field is undefined on simple zones', () => {
@@ -327,6 +328,105 @@ describe('parseConfig — pump', () => {
       preRunSec: 3,
       postRunSec: 5,
       zoneIds: ['z1'],
+    });
+  });
+});
+
+describe('parseConfig — global rain', () => {
+  it('returns undefined when no top-level rain and no legacy per-zone rain', () => {
+    const result = parseConfig(
+      asConfig({
+        location: BASE_LOCATION,
+        zones: [{ id: 'z1', name: 'A', hueLightId: '1' }],
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.config.rain).toBeUndefined();
+  });
+
+  it('reads a top-level rain block as-is', () => {
+    const result = parseConfig(
+      asConfig({
+        location: BASE_LOCATION,
+        rain: { enabled: true, past24hThresholdMm: 3, next12hThresholdMm: 1 },
+        zones: [{ id: 'z1', name: 'A', hueLightId: '1' }],
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.config.rain).toEqual({
+      enabled: true,
+      past24hThresholdMm: 3,
+      next12hThresholdMm: 1,
+    });
+  });
+
+  it('migrates legacy per-zone rainBlocking to the strictest non-zero thresholds', () => {
+    const result = parseConfig(
+      asConfig({
+        location: BASE_LOCATION,
+        zones: [
+          {
+            id: 'z1',
+            name: 'A',
+            hueLightId: '1',
+            rainBlocking: { enabled: true, past24hThresholdMm: 5, next12hThresholdMm: 2 },
+          },
+          {
+            id: 'z2',
+            name: 'B',
+            hueLightId: '2',
+            rainBlocking: { enabled: true, past24hThresholdMm: 1, next12hThresholdMm: 3 },
+          },
+          {
+            id: 'z3',
+            name: 'Disabled',
+            hueLightId: '3',
+            // Disabled legacy entries don't contribute.
+            rainBlocking: { enabled: false, past24hThresholdMm: 999, next12hThresholdMm: 999 },
+          },
+        ],
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.config.rain).toEqual({
+      enabled: true,
+      past24hThresholdMm: 1,
+      next12hThresholdMm: 2,
+    });
+  });
+
+  it('top-level rain wins over any legacy per-zone settings', () => {
+    const result = parseConfig(
+      asConfig({
+        location: BASE_LOCATION,
+        rain: { enabled: false, past24hThresholdMm: 0, next12hThresholdMm: 0 },
+        zones: [
+          {
+            id: 'z1',
+            name: 'A',
+            hueLightId: '1',
+            rainBlocking: { enabled: true, past24hThresholdMm: 5, next12hThresholdMm: 2 },
+          },
+        ],
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.config.rain).toEqual({
+      enabled: false,
+      past24hThresholdMm: 0,
+      next12hThresholdMm: 0,
     });
   });
 });

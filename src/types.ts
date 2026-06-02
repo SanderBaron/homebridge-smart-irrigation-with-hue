@@ -137,6 +137,4 @@ export interface Zone {
   runWith?: string[];
   /** Optional wind blocking. Absent or `enabled: false` means the zone never blocks on wind. */
   windBlocking?: WindBlockingConfig;
-  /** Optional rain blocking. Absent or `enabled: false` means the zone never blocks on rain. */
-  rainBlocking?: RainBlockingConfig;
 }

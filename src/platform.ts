@@ -306,6 +306,7 @@ export class SmartIrrigationPlatform implements DynamicPlatformPlugin {
     const snapshots = this.weatherCache?.peek() ?? [];
     const decision = evaluateZoneBlocking(
       zone,
+      this.parsedConfig.rain,
       snapshots,
       this.parsedConfig.weather.consensusStrategy,
     );

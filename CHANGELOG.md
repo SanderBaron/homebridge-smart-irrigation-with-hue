@@ -5,9 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] — 2026-05-27
+## [0.1.0] — 2026-06-02
 
-Initial public release. Renamed the package to **homebridge-smart-irrigation-with-hue** ahead of npm publish. Bundles every feature delivered in phases 1–11 plus the post-Phase-11 polish.
+Initial public release. Renamed the package to **homebridge-smart-irrigation-with-hue** ahead of npm publish. Bundles every feature delivered in phases 1–11 plus the post-Phase-11 polish, with one late refinement before launch: rain blocking is now a single global setting instead of per-zone, since rain falls equally on every zone of a single irrigation rig.
+
+### Rain blocking is global (pre-launch refinement)
+
+- New top-level `rain` config block (`enabled`, `past24hThresholdMm`, `next12hThresholdMm`) drives one rain decision for all zones.
+- Wind blocking is still per zone — only rain moved.
+- Single **Rain override** switch in Apple Home when rain blocking is enabled, regardless of override granularity (which now only governs wind).
+- Migration: when a config still has v0.1-shape per-zone `rainBlocking` entries (no top-level `rain`), the parser takes the strictest (lowest non-zero) thresholds across all enabled per-zone entries to seed the global block. The UI client does the same so the migrated values show up in the form immediately.
+- `evaluateRainBlocking(cfg, snapshots, strategy)` and `evaluateZoneBlocking(zone, rainCfg, snapshots, strategy)` reflect the new signatures.
 
 ### Added (since the spec)
 
