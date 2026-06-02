@@ -3,28 +3,37 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+  id-token: write
 
 jobs:
   release:
-    name: Publish to npm
     runs-on: ubuntu-latest
 
-    # Required for npm Trusted Publishing (OIDC — no NPM_TOKEN secret needed)
-    permissions:
-      contents: read
-      id-token: write
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 22.x
-          cache: npm
+          node-version: '22'
           registry-url: 'https://registry.npmjs.org'
+
+      - name: Upgrade npm and clear placeholder auth so OIDC takes over
+        run: |
+          npm install -g npm@latest
+          sed -i '/_authToken=/d' "$HOME/.npmrc" || true
+
+      - name: Verify tag matches package.json version
+        run: |
+          PKG_VER=$(node -p "require('./package.json').version")
+          TAG_VER="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VER" != "$TAG_VER" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $PKG_VER"
+            exit 1
+          fi
 
       - name: Install dependencies
         run: npm ci
@@ -38,7 +47,25 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Extract release notes from CHANGELOG
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          awk -v ver="$VER" '
+            $0 ~ "^## \\[?"ver"\\]?" { flag=1; next }
+            flag && /^## / { exit }
+            flag { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "No CHANGELOG section found for $VER — using empty notes"
+            echo "Release $VER" > release-notes.md
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-notes.md
+          name: ${{ github.ref_name }}
+          make_latest: 'true'
+
       - name: Publish to npm
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
