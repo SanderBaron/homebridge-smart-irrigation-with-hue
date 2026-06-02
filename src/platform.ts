@@ -9,7 +9,7 @@ import type {
 } from 'homebridge';
 
 import { GLOBAL_OVERRIDE_ZONE_ID } from './accessoryPlan';
-import { evaluateZoneBlocking } from './blockingEngine';
+import { evaluateRainBlocking, evaluateZoneBlocking } from './blockingEngine';
 import { parseConfig, type SmartIrrigationConfig } from './config';
 import { HueClient } from './hue/client';
 import { OverrideManager } from './overrideManager';
@@ -64,6 +64,13 @@ export class SmartIrrigationPlatform implements DynamicPlatformPlugin {
   private stateStore: StateStore | undefined;
   private persistentState: PersistentState = defaultState();
   private savePending: Promise<void> = Promise.resolve();
+  /**
+   * Dedup key for the global rain-block info log. Only re-emits when the
+   * blocked/not-blocked state or the human-readable explanation actually
+   * changes between weather refreshes, so a stable rainy spell logs once
+   * instead of once per zone evaluation.
+   */
+  private lastRainStateKey: string | undefined;
 
   public constructor(
     public readonly log: Logging,
@@ -260,8 +267,49 @@ export class SmartIrrigationPlatform implements DynamicPlatformPlugin {
       if (after !== undefined && after !== before) {
         this.schedulePersist();
       }
+      if (after !== undefined) {
+        this.logRainStateIfChanged(after);
+      }
     } catch (err) {
       this.log.warn('Weather refresh failed: %s', String(err));
+    }
+  }
+
+  /**
+   * Emit a single info-level summary of the current global rain decision
+   * whenever it changes (blocked / not blocked, or the explanation text).
+   * Lets `isZoneBlocked` keep its per-zone "blocked by rain" lines short —
+   * the full multi-source reasoning is already in the log at the most recent
+   * weather-refresh timestamp.
+   */
+  private logRainStateIfChanged(snapshots: WeatherSnapshot[]): void {
+    if (this.parsedConfig === undefined) {
+      return;
+    }
+    const decision = evaluateRainBlocking(
+      this.parsedConfig.rain,
+      snapshots,
+      this.parsedConfig.weather.consensusStrategy,
+    );
+    const key =
+      decision === undefined
+        ? 'off'
+        : `${decision.blocked ? 'block' : 'clear'}:${decision.explanation ?? ''}`;
+    if (key === this.lastRainStateKey) {
+      return;
+    }
+    this.lastRainStateKey = key;
+    if (decision === undefined) {
+      return; // rain blocking disabled in config — no need to log
+    }
+    if (decision.blocked) {
+      this.log.info('Rain block active: %s', decision.explanation ?? 'rain consensus');
+    } else if (decision.totalVotes > 0) {
+      this.log.info(
+        'Rain block cleared (%d of %d sources voted block)',
+        decision.blockingVotes,
+        decision.totalVotes,
+      );
     }
   }
 
@@ -325,10 +373,15 @@ export class SmartIrrigationPlatform implements DynamicPlatformPlugin {
     if (windBlocking || rainBlocking) {
       const reasons: string[] = [];
       if (windBlocking) {
+        // Wind reason stays full — it's per-zone (octant + speed) and won't
+        // be in any earlier log line.
         reasons.push(decision.wind?.explanation ?? 'wind');
       }
       if (rainBlocking) {
-        reasons.push(decision.rain?.explanation ?? 'rain');
+        // Rain reason is the same across every zone, and the full multi-
+        // source explanation was already logged once at the most recent
+        // weather refresh — keep the per-zone line short here.
+        reasons.push('rain');
       }
       this.log.info('Zone %s blocked: %s', zoneId, reasons.join('; '));
       return true;
