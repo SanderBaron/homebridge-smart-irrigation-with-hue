@@ -22,6 +22,10 @@ interface ValveRuntime {
   active: boolean;
   /** User-configurable duration in seconds (via SetDuration). Defaults to 5 min. */
   setDurationSec: number;
+  /** Actual duration of the current (or most recent) run in seconds. Used for the
+   *  RemainingDuration countdown so schedule-triggered runs show their real time,
+   *  not the HomeKit default SetDuration. */
+  currentRunDurationSec: number;
   /** Wall-clock ms when the current run was started; 0 if not running. */
   startedAt: number;
   /** Auto-close timer for the active run. */
@@ -36,6 +40,10 @@ export interface AccessoryDependencies {
   overrideManager: OverrideManager;
   /** True when the Hue Bridge passed its most recent health check. */
   isHueOnline: () => boolean;
+  /** Per-zone SetDuration values restored from the state file. */
+  initialDurations: Record<string, number>;
+  /** Called when the user changes SetDuration so the platform can persist it. */
+  onSetDuration: (zoneId: string, seconds: number) => void;
 }
 
 /**
@@ -150,9 +158,11 @@ export class SmartIrrigationAccessory {
         this.platform.Characteristic.ValveType.IRRIGATION,
       );
 
+      const initialSec = this.deps.initialDurations[plan.zoneId] ?? DEFAULT_VALVE_SECONDS;
       this.valveState.set(plan.zoneId, {
         active: false,
-        setDurationSec: DEFAULT_VALVE_SECONDS,
+        setDurationSec: initialSec,
+        currentRunDurationSec: initialSec,
         startedAt: 0,
       });
 
@@ -172,6 +182,7 @@ export class SmartIrrigationAccessory {
           const state = this.valveState.get(plan.zoneId);
           if (state !== undefined) {
             state.setDurationSec = Number(value);
+            this.deps.onSetDuration(plan.zoneId, Number(value));
           }
         },
         () => this.valveState.get(plan.zoneId)?.setDurationSec ?? DEFAULT_VALVE_SECONDS,
@@ -358,9 +369,15 @@ export class SmartIrrigationAccessory {
         clearTimeout(state.closeTimer);
       }
       state.startedAt = Date.now();
+      state.currentRunDurationSec = durationMs / 1000;
       state.closeTimer = setTimeout(() => {
         void this.closeValve(zoneId, 'duration-expired');
       }, durationMs);
+      const extSvc = this.valveServices.get(`valve-${zoneId}`);
+      extSvc?.updateCharacteristic(
+        this.platform.Characteristic.RemainingDuration,
+        Math.round(durationMs / 1000),
+      );
       this.platform.log.debug(
         'Zone "%s" already active; extending close timer (%s, %d sec)',
         zone.name,
@@ -390,12 +407,20 @@ export class SmartIrrigationAccessory {
 
     state.active = true;
     state.startedAt = Date.now();
+    state.currentRunDurationSec = durationMs / 1000;
     state.closeTimer = setTimeout(() => {
       void this.closeValve(zoneId, 'duration-expired');
     }, durationMs);
 
     this.syncValveActiveCharacteristic(zoneId, true);
     this.updateIrrigationInUse();
+    // Push RemainingDuration immediately so Apple Home shows the correct
+    // countdown from the first instant rather than waiting for the next poll.
+    const openSvc = this.valveServices.get(`valve-${zoneId}`);
+    openSvc?.updateCharacteristic(
+      this.platform.Characteristic.RemainingDuration,
+      Math.round(durationMs / 1000),
+    );
 
     // Manual opens pull along the zone's run-with buddies for the same
     // duration. The schedule path doesn't repeat this because the scheduler
@@ -456,7 +481,7 @@ export class SmartIrrigationAccessory {
       return 0;
     }
     const elapsed = (Date.now() - state.startedAt) / 1000;
-    return Math.max(0, Math.round(state.setDurationSec - elapsed));
+    return Math.max(0, Math.round(state.currentRunDurationSec - elapsed));
   }
 
   private syncValveActiveCharacteristic(zoneId: string, active: boolean): void {
@@ -469,6 +494,9 @@ export class SmartIrrigationAccessory {
       : this.platform.Characteristic.Active.INACTIVE;
     svc.updateCharacteristic(this.platform.Characteristic.Active, value);
     svc.updateCharacteristic(this.platform.Characteristic.InUse, value);
+    if (!active) {
+      svc.updateCharacteristic(this.platform.Characteristic.RemainingDuration, 0);
+    }
   }
 
   /**

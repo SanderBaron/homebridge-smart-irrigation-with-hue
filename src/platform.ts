@@ -225,6 +225,14 @@ export class SmartIrrigationPlatform implements DynamicPlatformPlugin {
       scheduler: this.scheduler,
       overrideManager: this.overrideManager,
       isHueOnline: () => this.hueOnline,
+      initialDurations: this.persistentState.valveDurations ?? {},
+      onSetDuration: (zoneId, seconds) => {
+        if (this.persistentState.valveDurations === undefined) {
+          this.persistentState.valveDurations = {};
+        }
+        this.persistentState.valveDurations[zoneId] = seconds;
+        this.schedulePersist();
+      },
     });
 
     this.api.updatePlatformAccessories([accessory]);

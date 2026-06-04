@@ -360,7 +360,7 @@ export class Scheduler {
         seq.stepIndex += 1;
         continue;
       }
-      if (this.isZoneBlockedCb?.(step.zoneId) === true) {
+      if (!seq.manuallyTriggered && this.isZoneBlockedCb?.(step.zoneId) === true) {
         this.log?.info(
           'Entry "%s" step %d zone %s skipped: weather-blocked',
           seq.entry.name,
@@ -482,7 +482,10 @@ export class Scheduler {
         if (this.queue.some((q) => q.zoneId === buddyId)) {
           continue;
         }
-        if (this.isZoneBlockedCb?.(buddyId) === true) {
+        const isManual = this.activeSequences.some(
+          (s) => s.entryId === run.entryId && s.manuallyTriggered,
+        );
+        if (!isManual && this.isZoneBlockedCb?.(buddyId) === true) {
           this.log?.info('Run-with buddy %s skipped: currently weather-blocked', buddyId);
           continue;
         }

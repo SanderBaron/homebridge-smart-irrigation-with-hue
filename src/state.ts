@@ -29,6 +29,8 @@ export interface PersistedOverride {
  *   expiry, so they don't silently reset on restart.
  * - **weatherSnapshots** carries the last weather reading so blocking
  *   decisions made immediately after restart aren't running blind.
+ * - **valveDurations** stores the user-chosen HomeKit SetDuration value per
+ *   zone (in seconds) so it survives a Homebridge restart.
  */
 export interface PersistentState {
   version: number;
@@ -38,6 +40,8 @@ export interface PersistentState {
   weatherSnapshots: WeatherSnapshot[];
   /** Wall-clock ms when the snapshot was written; used for diagnostics. */
   savedAt: number;
+  /** Per-zone user-chosen valve duration in seconds (HomeKit SetDuration). */
+  valveDurations?: Record<string, number>;
 }
 
 export function defaultState(): PersistentState {
@@ -208,6 +212,15 @@ function sanitise(value: unknown, log: Logging | undefined): PersistentState {
   }
   if (typeof r['savedAt'] === 'number') {
     base.savedAt = r['savedAt'];
+  }
+  const durations = r['valveDurations'];
+  if (typeof durations === 'object' && durations !== null && !Array.isArray(durations)) {
+    base.valveDurations = {};
+    for (const [k, v] of Object.entries(durations as Record<string, unknown>)) {
+      if (typeof v === 'number' && v > 0) {
+        base.valveDurations[k] = v;
+      }
+    }
   }
   return base;
 }
