@@ -110,14 +110,16 @@ class SmartIrrigationUiServer extends HomebridgePluginUiServer {
     // doesn't need filesystem access to know which sources / thresholds to use.
     let cfg;
     try {
-      const raw = (payload && typeof payload === 'object') ? payload : {};
+      const raw = payload && typeof payload === 'object' ? payload : {};
       const result = parseConfig({ platform: 'SmartIrrigation', ...raw });
       if (!result.ok) {
         throw new Error('Config invalid: ' + result.error);
       }
       cfg = result.config;
     } catch (err) {
-      throw new RequestError('Could not parse config: ' + String(err && err.message ? err.message : err));
+      throw new RequestError(
+        'Could not parse config: ' + String(err && err.message ? err.message : err),
+      );
     }
 
     const { latitude, longitude } = cfg.location;
@@ -125,10 +127,18 @@ class SmartIrrigationUiServer extends HomebridgePluginUiServer {
     // Build fetch tasks for each configured source.
     const fetchers = [];
     if (cfg.weather.sources.includes('open-meteo')) {
-      fetchers.push({ key: 'open-meteo', label: 'Open-Meteo', p: fetchOpenMeteo({ latitude, longitude }) });
+      fetchers.push({
+        key: 'open-meteo',
+        label: 'Open-Meteo',
+        p: fetchOpenMeteo({ latitude, longitude }),
+      });
     }
     if (cfg.weather.sources.includes('buienradar')) {
-      fetchers.push({ key: 'buienradar', label: 'Buienradar', p: fetchBuienradar({ latitude, longitude }) });
+      fetchers.push({
+        key: 'buienradar',
+        label: 'Buienradar',
+        p: fetchBuienradar({ latitude, longitude }),
+      });
     }
     if (cfg.weather.sources.includes('openweathermap') && cfg.weather.openWeatherMapApiKey) {
       fetchers.push({
@@ -186,8 +196,14 @@ class SmartIrrigationUiServer extends HomebridgePluginUiServer {
             };
           })()
         : null;
-    const maxRain24h = okSnaps.reduce((m, s) => s.rainLast24hMm != null ? Math.max(m, s.rainLast24hMm) : m, -Infinity);
-    const maxRain12h = okSnaps.reduce((m, s) => s.rainNext12hMm != null ? Math.max(m, s.rainNext12hMm) : m, -Infinity);
+    const maxRain24h = okSnaps.reduce(
+      (m, s) => (s.rainLast24hMm != null ? Math.max(m, s.rainLast24hMm) : m),
+      -Infinity,
+    );
+    const maxRain12h = okSnaps.reduce(
+      (m, s) => (s.rainNext12hMm != null ? Math.max(m, s.rainNext12hMm) : m),
+      -Infinity,
+    );
 
     const rain =
       rainDecision == null
@@ -218,13 +234,17 @@ class SmartIrrigationUiServer extends HomebridgePluginUiServer {
         id: z.id,
         name: z.name,
         windEnabled,
-        windMinSpeedMs: windEnabled ? z.windBlocking.minimumWindSpeedMs ?? 0 : null,
-        windOctants: windEnabled ? z.windBlocking.blockedOctants ?? [] : [],
+        windMinSpeedMs: windEnabled ? (z.windBlocking.minimumWindSpeedMs ?? 0) : null,
+        windOctants: windEnabled ? (z.windBlocking.blockedOctants ?? []) : [],
         windBlocked: dec.wind?.blocked === true,
         windExplanation: dec.wind?.explanation ?? null,
-        windVotes: dec.wind ? { blocking: dec.wind.blockingVotes, total: dec.wind.totalVotes } : null,
+        windVotes: dec.wind
+          ? { blocking: dec.wind.blockingVotes, total: dec.wind.totalVotes }
+          : null,
         rainBlocked: dec.rain?.blocked === true,
-        rainVotes: dec.rain ? { blocking: dec.rain.blockingVotes, total: dec.rain.totalVotes } : null,
+        rainVotes: dec.rain
+          ? { blocking: dec.rain.blockingVotes, total: dec.rain.totalVotes }
+          : null,
         blocked: dec.blocked === true,
       };
     });

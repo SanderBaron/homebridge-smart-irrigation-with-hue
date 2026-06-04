@@ -113,11 +113,21 @@ function formatWind(ms, unit) {
   if (ms == null) return null;
   let val;
   switch (unit) {
-    case 'km/h': val = ms * 3.6; break;
-    case 'mph':  val = ms * 2.23694; break;
-    case 'kts':  val = ms * 1.94384; break;
-    case 'Bft':  val = Math.min(12, Math.round(Math.pow(ms / 0.836, 2 / 3))); break;
-    default:     val = ms; unit = 'm/s';
+    case 'km/h':
+      val = ms * 3.6;
+      break;
+    case 'mph':
+      val = ms * 2.23694;
+      break;
+    case 'kts':
+      val = ms * 1.94384;
+      break;
+    case 'Bft':
+      val = Math.min(12, Math.round(Math.pow(ms / 0.836, 2 / 3)));
+      break;
+    default:
+      val = ms;
+      unit = 'm/s';
   }
   return `${Math.round(val * 10) / 10} ${unit}`;
 }
@@ -129,9 +139,12 @@ function fmt(v, digits = 1) {
 /** One-line plain-English description of the consensus rule. */
 function consensusBlurb(strategy) {
   switch (strategy) {
-    case 'any': return 'blocks if ANY source reports a blocking condition';
-    case 'all': return 'blocks only when EVERY source agrees';
-    default:    return 'blocks when MOST active sources agree';
+    case 'any':
+      return 'blocks if ANY source reports a blocking condition';
+    case 'all':
+      return 'blocks only when EVERY source agrees';
+    default:
+      return 'blocks when MOST active sources agree';
   }
 }
 
@@ -176,8 +189,12 @@ function renderWeatherStatus(data) {
       } else {
         const w = formatWind(s.windSpeedMs, unit);
         tr.appendChild(el('td', null, w ? `${w}${s.windOctant ? ' ' + s.windOctant : ''}` : '—'));
-        tr.appendChild(el('td', null, s.rainLast24hMm != null ? `${fmt(s.rainLast24hMm)} mm` : '—'));
-        tr.appendChild(el('td', null, s.rainNext12hMm != null ? `${fmt(s.rainNext12hMm)} mm` : '—'));
+        tr.appendChild(
+          el('td', null, s.rainLast24hMm != null ? `${fmt(s.rainLast24hMm)} mm` : '—'),
+        );
+        tr.appendChild(
+          el('td', null, s.rainNext12hMm != null ? `${fmt(s.rainNext12hMm)} mm` : '—'),
+        );
       }
       tbody.appendChild(tr);
     }
@@ -192,7 +209,11 @@ function renderWeatherStatus(data) {
   const zoneSection = el('div', 'ws-section');
   const title = el('div', 'ws-section-title');
   title.appendChild(document.createTextNode('Per zone'));
-  const cBadge = el('span', 'consensus-badge', `consensus: ${data.consensusStrategy || 'majority'}`);
+  const cBadge = el(
+    'span',
+    'consensus-badge',
+    `consensus: ${data.consensusStrategy || 'majority'}`,
+  );
   cBadge.title = consensusBlurb(data.consensusStrategy);
   title.appendChild(cBadge);
   zoneSection.appendChild(title);
@@ -233,9 +254,10 @@ function renderWeatherStatus(data) {
       windCell.appendChild(el('div', 'zval-off', 'off'));
     } else {
       windCell.appendChild(el('div', 'zval', windMeasured));
-      const octStr = Array.isArray(z.windOctants) && z.windOctants.length > 0
-        ? z.windOctants.join(' ')
-        : 'any dir';
+      const octStr =
+        Array.isArray(z.windOctants) && z.windOctants.length > 0
+          ? z.windOctants.join(' ')
+          : 'any dir';
       const minStr = formatWind(z.windMinSpeedMs, unit) || `${z.windMinSpeedMs}`;
       windCell.appendChild(el('div', 'zthresh', `≥ ${minStr} · ${octStr}${voteTag(z.windVotes)}`));
     }
@@ -248,7 +270,11 @@ function renderWeatherStatus(data) {
     } else {
       rainCell.appendChild(el('div', 'zval', `24h ${rain24Str} · 12h ${rain12Str} mm`));
       rainCell.appendChild(
-        el('div', 'zthresh', `≥ ${rainT.past24hMm ?? 0} / ${rainT.next12hMm ?? 0} mm${voteTag(z.rainVotes)}`),
+        el(
+          'div',
+          'zthresh',
+          `≥ ${rainT.past24hMm ?? 0} / ${rainT.next12hMm ?? 0} mm${voteTag(z.rainVotes)}`,
+        ),
       );
     }
     tr.appendChild(rainCell);
