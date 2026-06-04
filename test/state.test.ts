@@ -83,7 +83,6 @@ describe('StateStore — load', () => {
         version: 1,
         scheduleActive: true,
         schedulerFiredToday: { e1: '2026-05-26' },
-        overrides: [{ zoneId: 'z1', kind: 'rain', expiresAt: 1_700_000_000_000 }],
         weatherSnapshots: [
           {
             source: 'open-meteo',
@@ -101,8 +100,6 @@ describe('StateStore — load', () => {
     const state = await store.load();
     expect(state.scheduleActive).toBe(true);
     expect(state.schedulerFiredToday['e1']).toBe('2026-05-26');
-    expect(state.overrides).toHaveLength(1);
-    expect(state.overrides[0]?.kind).toBe('rain');
     expect(state.weatherSnapshots[0]?.observedAt).toBeInstanceOf(Date);
     expect(state.weatherSnapshots[0]?.windSpeedMs).toBe(4.2);
   });

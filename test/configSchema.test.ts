@@ -54,7 +54,6 @@ describe('config.schema.json — covers every parser field', () => {
     'zones',
     'schedule',
     'weather',
-    'override',
     'windUnit',
     'logLevel',
   ])('declares the %s top-level property', (key) => {

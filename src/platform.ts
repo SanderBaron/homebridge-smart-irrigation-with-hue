@@ -8,11 +8,9 @@ import type {
   Service,
 } from 'homebridge';
 
-import { GLOBAL_OVERRIDE_ZONE_ID } from './accessoryPlan';
 import { evaluateRainBlocking, evaluateZoneBlocking } from './blockingEngine';
 import { parseConfig, type SmartIrrigationConfig } from './config';
 import { HueClient } from './hue/client';
-import { OverrideManager } from './overrideManager';
 import { PumpOrchestrator } from './pumpOrchestrator';
 import { Scheduler } from './scheduler';
 import { SmartIrrigationAccessory } from './platformAccessory';
@@ -36,12 +34,11 @@ const SCHEDULER_TICK_MS = 30 * 1000;
  * - **Weather layer** (Open-Meteo / Buienradar / OpenWeatherMap) feeds the
  *   blocking engine; results are memoised in a {@link TtlCache}.
  * - **Blocking engine** projects weather + per-zone thresholds into a
- *   block / don't-block verdict, modulated by manual override switches.
+ *   block / don't-block verdict. Blocking applies to the scheduled programme
+ *   only — manual valve opens and "Run Schedule Now" always water.
  * - **Pump orchestrator** sequences pre-/post-run timing for the optional
  *   central pump.
  * - **Scheduler** fires schedule entries with concurrency-group awareness.
- * - **Override manager** tracks per-zone wind/rain override state with
- *   auto-reset.
  *
  * The full configuration UI lands in Phase 9 — until then, config is read
  * from `config.json` and the platform tolerates a sparse config so it can
@@ -56,7 +53,6 @@ export class SmartIrrigationPlatform implements DynamicPlatformPlugin {
   private hueClient: HueClient | undefined;
   private pump: PumpOrchestrator | undefined;
   private scheduler: Scheduler | undefined;
-  private overrideManager: OverrideManager | undefined;
   private weatherCache: TtlCache<WeatherSnapshot[]> | undefined;
   private accessoryBuilder: SmartIrrigationAccessory | undefined;
   private hueOnline = false;
@@ -114,10 +110,9 @@ export class SmartIrrigationPlatform implements DynamicPlatformPlugin {
     });
     this.persistentState = await this.stateStore.load();
     this.log.debug(
-      'Loaded persistent state from %s (savedAt=%s, %d overrides, %d snapshots)',
+      'Loaded persistent state from %s (savedAt=%s, %d snapshots)',
       this.stateStore.path(),
       new Date(this.persistentState.savedAt).toISOString(),
-      this.persistentState.overrides.length,
       this.persistentState.weatherSnapshots.length,
     );
 
@@ -176,16 +171,6 @@ export class SmartIrrigationPlatform implements DynamicPlatformPlugin {
       this.scheduler.setActive(true);
     }
 
-    this.overrideManager = new OverrideManager({
-      autoResetMinutes: result.config.override.autoResetMinutes,
-      onChange: (zoneId, kind, active) => {
-        this.accessoryBuilder?.syncOverrideSwitch(zoneId, kind, active);
-        this.schedulePersist();
-      },
-      log: this.log,
-    });
-    this.overrideManager.restore(this.persistentState.overrides);
-
     if (this.persistentState.weatherSnapshots.length > 0) {
       this.weatherCache.set(this.persistentState.weatherSnapshots);
     }
@@ -210,11 +195,7 @@ export class SmartIrrigationPlatform implements DynamicPlatformPlugin {
       this.log.debug('Reusing cached platform accessory: %s', accessory.displayName);
     }
 
-    if (
-      this.pump === undefined ||
-      this.scheduler === undefined ||
-      this.overrideManager === undefined
-    ) {
+    if (this.pump === undefined || this.scheduler === undefined) {
       return;
     }
 
@@ -223,7 +204,6 @@ export class SmartIrrigationPlatform implements DynamicPlatformPlugin {
       hueClient: this.hueClient,
       pump: this.pump,
       scheduler: this.scheduler,
-      overrideManager: this.overrideManager,
       isHueOnline: () => this.hueOnline,
       initialDurations: this.persistentState.valveDurations ?? {},
       onSetDuration: (zoneId, seconds) => {
@@ -352,7 +332,7 @@ export class SmartIrrigationPlatform implements DynamicPlatformPlugin {
   }
 
   private isZoneBlocked(zoneId: string): boolean {
-    if (this.parsedConfig === undefined || this.overrideManager === undefined) {
+    if (this.parsedConfig === undefined) {
       return false;
     }
     const zone = this.parsedConfig.zones.find((z) => z.id === zoneId);
@@ -367,16 +347,8 @@ export class SmartIrrigationPlatform implements DynamicPlatformPlugin {
       this.parsedConfig.weather.consensusStrategy,
     );
 
-    // Per-zone override OR the global "all zones" override exempts this zone.
-    const windOverridden =
-      this.overrideManager.isOverridden(zoneId, 'wind') ||
-      this.overrideManager.isOverridden(GLOBAL_OVERRIDE_ZONE_ID, 'wind');
-    const rainOverridden =
-      this.overrideManager.isOverridden(zoneId, 'rain') ||
-      this.overrideManager.isOverridden(GLOBAL_OVERRIDE_ZONE_ID, 'rain');
-
-    const windBlocking = decision.wind?.blocked === true && !windOverridden;
-    const rainBlocking = decision.rain?.blocked === true && !rainOverridden;
+    const windBlocking = decision.wind?.blocked === true;
+    const rainBlocking = decision.rain?.blocked === true;
 
     if (windBlocking || rainBlocking) {
       const reasons: string[] = [];
@@ -436,7 +408,6 @@ export class SmartIrrigationPlatform implements DynamicPlatformPlugin {
       ...this.persistentState,
       scheduleActive: this.scheduler?.isActive() ?? false,
       schedulerFiredToday: this.scheduler?.getFiredTodaySnapshot() ?? {},
-      overrides: this.overrideManager?.listActive() ?? [],
       weatherSnapshots: this.weatherCache?.peek() ?? [],
     };
     this.persistentState = snapshot;
@@ -455,11 +426,8 @@ export class SmartIrrigationPlatform implements DynamicPlatformPlugin {
     void this.scheduler?.stopAll();
     void this.accessoryBuilder?.closeAllValves('shutdown');
 
-    // Persist a final snapshot before clearing overrides — the in-memory
-    // listActive() reflects what we want to restore on next launch.
+    // Persist a final snapshot on the way out.
     this.schedulePersist();
     await this.savePending;
-
-    this.overrideManager?.clearAllSilent();
   }
 }

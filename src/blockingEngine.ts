@@ -125,9 +125,8 @@ export interface ZoneBlockingDecision {
  * Combined evaluator: runs both blocking checks and aggregates the result.
  *
  * The zone is blocked when *either* wind or rain consensus blocks. Returning
- * the individual decisions lets the caller render override switches (one per
- * condition) and log explanations independently — the Phase 7 platform code
- * needs this distinction.
+ * the individual decisions lets the caller log wind and rain explanations
+ * independently and surface them separately in the status dashboard.
  */
 export function evaluateZoneBlocking(
   zone: Zone,

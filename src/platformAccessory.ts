@@ -2,15 +2,9 @@ import { Perms } from 'homebridge';
 import type { CharacteristicValue, PlatformAccessory, Service, WithUUID } from 'homebridge';
 import type { Characteristic } from '@homebridge/hap-nodejs';
 
-import {
-  computeSwitches,
-  computeValves,
-  GLOBAL_OVERRIDE_ZONE_ID,
-  type SwitchPlan,
-} from './accessoryPlan';
+import { computeSwitches, computeValves, type SwitchPlan } from './accessoryPlan';
 import type { SmartIrrigationConfig } from './config';
 import type { HueClient } from './hue/client';
-import type { OverrideManager } from './overrideManager';
 import type { PumpOrchestrator } from './pumpOrchestrator';
 import type { Scheduler } from './scheduler';
 import type { SmartIrrigationPlatform } from './platform';
@@ -37,7 +31,6 @@ export interface AccessoryDependencies {
   hueClient: HueClient | undefined;
   pump: PumpOrchestrator;
   scheduler: Scheduler;
-  overrideManager: OverrideManager;
   /** True when the Hue Bridge passed its most recent health check. */
   isHueOnline: () => boolean;
   /** Per-zone SetDuration values restored from the state file. */
@@ -48,13 +41,13 @@ export interface AccessoryDependencies {
 
 /**
  * The single platform accessory: one Irrigation System service with a Valve
- * sub-service per zone, plus dynamic Switch services for the schedule and the
- * per-zone wind/rain overrides.
+ * sub-service per zone, plus the two schedule Switch services (Activate
+ * Schedule + Run Schedule Now).
  *
  * This class is the glue between HomeKit characteristic events and the
- * subsystem modules (Hue client, pump, scheduler, override manager). It
- * deliberately stays thin — concurrency, weather logic, and pump timing all
- * live in those modules; the accessory just routes events.
+ * subsystem modules (Hue client, pump, scheduler). It deliberately stays thin
+ * — concurrency, weather logic, and pump timing all live in those modules; the
+ * accessory just routes events.
  */
 export class SmartIrrigationAccessory {
   private readonly platform: SmartIrrigationPlatform;
@@ -79,7 +72,6 @@ export class SmartIrrigationAccessory {
     this.buildValves();
     this.buildSwitches();
     this.removeStaleServices();
-    this.wireOverrideSync();
   }
 
   /** Start a zone programmatically (called by the scheduler). */
@@ -280,14 +272,6 @@ export class SmartIrrigationAccessory {
     }
   }
 
-  private wireOverrideSync(): void {
-    // Whenever an override auto-resets, mirror the change to the HomeKit switch.
-    // We register a single observer; the OverrideManager fires `onChange` with
-    // the zoneId and kind, so we can locate the right switch service.
-    // OverrideManager is constructed by the platform with `onChange` already
-    // wired — this method is a placeholder for future reactivity work.
-  }
-
   // ---------- handlers ----------
 
   private makeValveActiveSetter(zoneId: string): (value: CharacteristicValue) => void {
@@ -326,17 +310,6 @@ export class SmartIrrigationAccessory {
             this.platform.log.info('Run Schedule Now aborted by user');
             void this.deps.scheduler.stopAll();
           }
-          break;
-        case 'wind-override':
-          if (plan.zoneId !== undefined) {
-            this.deps.overrideManager.setOverride(plan.zoneId, 'wind', on);
-          }
-          break;
-        case 'wind-override-global':
-          this.deps.overrideManager.setOverride(GLOBAL_OVERRIDE_ZONE_ID, 'wind', on);
-          break;
-        case 'rain-override-global':
-          this.deps.overrideManager.setOverride(GLOBAL_OVERRIDE_ZONE_ID, 'rain', on);
           break;
       }
     };
@@ -510,14 +483,6 @@ export class SmartIrrigationAccessory {
     svc?.updateCharacteristic(this.platform.Characteristic.On, active);
   }
 
-  /** Mirror an override flip back to the corresponding Switch.On. Called from the platform's `onChange` wiring. */
-  public syncOverrideSwitch(zoneId: string, kind: 'wind' | 'rain', active: boolean): void {
-    const subtype =
-      zoneId === GLOBAL_OVERRIDE_ZONE_ID ? `${kind}-override-global` : `${kind}-override-${zoneId}`;
-    const svc = this.switchServices.get(subtype);
-    svc?.updateCharacteristic(this.platform.Characteristic.On, active);
-  }
-
   private initialSwitchState(plan: SwitchPlan): boolean {
     switch (plan.kind) {
       case 'schedule':
@@ -527,14 +492,6 @@ export class SmartIrrigationAccessory {
         // Homebridge restart the scheduler is empty so this resolves to
         // false, which is the correct boot state.
         return this.deps.scheduler.hasActiveManualRun();
-      case 'wind-override':
-        return plan.zoneId !== undefined
-          ? this.deps.overrideManager.isOverridden(plan.zoneId, 'wind')
-          : false;
-      case 'wind-override-global':
-        return this.deps.overrideManager.isOverridden(GLOBAL_OVERRIDE_ZONE_ID, 'wind');
-      case 'rain-override-global':
-        return this.deps.overrideManager.isOverridden(GLOBAL_OVERRIDE_ZONE_ID, 'rain');
     }
   }
 

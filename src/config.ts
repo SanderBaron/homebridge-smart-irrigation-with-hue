@@ -3,7 +3,6 @@ import type { PlatformConfig } from 'homebridge';
 import type { ConsensusStrategy, WeatherSourceName } from './weather/types';
 import type {
   CompassOctant,
-  OverrideGranularity,
   PumpConfig,
   RainBlockingConfig,
   ScheduleEntry,
@@ -55,10 +54,6 @@ export interface SmartIrrigationConfig {
     consensusStrategy: ConsensusStrategy;
     cacheMinutes: number;
   };
-  override: {
-    autoResetMinutes: number;
-    granularity: OverrideGranularity;
-  };
   windUnit: WindUnit;
   logLevel: 'info' | 'debug';
 }
@@ -74,7 +69,6 @@ const VALID_ZONE_TYPES: readonly ZoneType[] = [
 ];
 const VALID_WIND_UNITS: readonly WindUnit[] = ['m/s', 'km/h', 'mph', 'kts', 'Bft'];
 const VALID_STRATEGIES: readonly ConsensusStrategy[] = ['any', 'majority', 'all'];
-const VALID_GRANULARITIES: readonly OverrideGranularity[] = ['per-zone', 'global', 'none'];
 const VALID_SOURCES: readonly WeatherSourceName[] = ['open-meteo', 'buienradar', 'openweathermap'];
 
 /** Result of parsing — either a typed config or an error message for the log. */
@@ -140,12 +134,6 @@ export function parseConfig(raw: PlatformConfig): ParseResult {
     weather.sources = weather.sources.filter((s) => s !== 'openweathermap');
   }
 
-  const overrideRaw = isRecord(r['override']) ? r['override'] : {};
-  const override = {
-    autoResetMinutes: numberOr(overrideRaw['autoResetMinutes'], 60),
-    granularity: oneOf(overrideRaw['granularity'], VALID_GRANULARITIES, 'per-zone'),
-  };
-
   const windUnit = oneOf(r['windUnit'], VALID_WIND_UNITS, 'm/s');
   const logLevel = oneOf(r['logLevel'], ['info', 'debug'] as const, 'info');
 
@@ -156,7 +144,6 @@ export function parseConfig(raw: PlatformConfig): ParseResult {
     zones,
     schedule,
     weather,
-    override,
     windUnit,
     logLevel,
   };

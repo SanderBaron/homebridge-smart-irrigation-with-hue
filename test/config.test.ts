@@ -24,7 +24,6 @@ describe('parseConfig — basics', () => {
     expect(result.config.schedule).toEqual([]);
     expect(result.config.weather.cacheMinutes).toBe(10);
     expect(result.config.weather.consensusStrategy).toBe('majority');
-    expect(result.config.override.autoResetMinutes).toBe(60);
     expect(result.config.windUnit).toBe('m/s');
     expect(result.config.pump).toBeUndefined();
   });

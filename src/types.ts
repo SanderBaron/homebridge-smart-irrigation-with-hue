@@ -14,19 +14,6 @@ export type CompassOctant = 'N' | 'NE' | 'E' | 'SE' | 'S' | 'SW' | 'W' | 'NW';
 export type WindUnit = 'm/s' | 'km/h' | 'mph' | 'kts' | 'Bft';
 
 /**
- * How many manual-override switches the platform exposes in Apple Home.
- *
- * - `per-zone` — one wind switch + one rain switch *per zone* that has the
- *   corresponding blocking enabled. Lets the user override specific zones.
- * - `global`   — one wind switch + one rain switch *total*, applying to every
- *   zone with the corresponding blocking. Cleaner Home layout.
- * - `none`     — no override switches at all. Users can still bypass blocks
- *   by manually opening valves in Apple Home; only scheduled runs respect the
- *   weather blocks in this mode.
- */
-export type OverrideGranularity = 'per-zone' | 'global' | 'none';
-
-/**
  * Zone hardware/usage type. Used only to seed sensible defaults in the UI when
  * a zone is first created — the blocking logic itself never branches on this.
  */

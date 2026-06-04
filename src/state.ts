@@ -11,13 +11,6 @@ const STATE_FORMAT_VERSION = 1;
 /** Filename inside the Homebridge storage dir. */
 export const STATE_FILE_NAME = 'weather-smart-irrigation-state.json';
 
-export interface PersistedOverride {
-  zoneId: string;
-  kind: 'wind' | 'rain';
-  /** Unix-ms timestamp when the override would auto-clear. */
-  expiresAt: number;
-}
-
 /**
  * Snapshot of everything the plugin needs to remember across Homebridge
  * restarts.
@@ -25,8 +18,6 @@ export interface PersistedOverride {
  * - **scheduleActive** mirrors the "Activate Schedule" switch.
  * - **schedulerFiredToday** keeps the per-entry last-fired date, so a restart
  *   doesn't re-trigger morning watering that already ran today.
- * - **overrides** preserves manual wind/rain overrides plus their original
- *   expiry, so they don't silently reset on restart.
  * - **weatherSnapshots** carries the last weather reading so blocking
  *   decisions made immediately after restart aren't running blind.
  * - **valveDurations** stores the user-chosen HomeKit SetDuration value per
@@ -36,7 +27,6 @@ export interface PersistentState {
   version: number;
   scheduleActive: boolean;
   schedulerFiredToday: Record<string, string>;
-  overrides: PersistedOverride[];
   weatherSnapshots: WeatherSnapshot[];
   /** Wall-clock ms when the snapshot was written; used for diagnostics. */
   savedAt: number;
@@ -49,7 +39,6 @@ export function defaultState(): PersistentState {
     version: STATE_FORMAT_VERSION,
     scheduleActive: false,
     schedulerFiredToday: {},
-    overrides: [],
     weatherSnapshots: [],
     savedAt: 0,
   };
@@ -182,24 +171,6 @@ function sanitise(value: unknown, log: Logging | undefined): PersistentState {
       if (typeof v === 'string') {
         base.schedulerFiredToday[k] = v;
       }
-    }
-  }
-  if (Array.isArray(r['overrides'])) {
-    for (const o of r['overrides']) {
-      if (typeof o !== 'object' || o === null) {
-        continue;
-      }
-      const item = o as Record<string, unknown>;
-      const zoneId = item['zoneId'];
-      const kind = item['kind'];
-      const expiresAt = item['expiresAt'];
-      if (typeof zoneId !== 'string' || (kind !== 'wind' && kind !== 'rain')) {
-        continue;
-      }
-      if (typeof expiresAt !== 'number') {
-        continue;
-      }
-      base.overrides.push({ zoneId, kind, expiresAt });
     }
   }
   if (Array.isArray(r['weatherSnapshots'])) {

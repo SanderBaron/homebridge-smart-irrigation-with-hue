@@ -15,6 +15,20 @@
         </p>
       </header>
 
+      <!-- ============================================================ Weather Status -->
+      <section id="section-status" class="card">
+        <div class="status-header">
+          <h2>Current weather</h2>
+          <div class="status-meta">
+            <span id="status-updated" class="muted" style="font-size:12px"></span>
+            <button type="button" id="btn-refresh-status" class="secondary small">↺ Refresh</button>
+          </div>
+        </div>
+        <div id="status-body">
+          <p class="status-loading">Loading weather data…</p>
+        </div>
+      </section>
+
       <!-- ============================================================ Hue Bridge -->
       <section id="section-hue" class="card">
         <h2>Hue Bridge</h2>
@@ -59,13 +73,18 @@
           </p>
         </div>
 
-        <div class="form-row">
-          <span>Detected lights / sockets</span>
-          <button type="button" id="btn-refresh-lights" class="secondary small">Refresh</button>
-        </div>
-        <div id="hue-lights" class="hue-lights">
-          <p class="empty">Pair the bridge to see available lights.</p>
-        </div>
+        <details id="hue-lights-details" class="hue-lights-details">
+          <summary class="hue-lights-summary">
+            <span>Detected lights / sockets <span id="hue-lights-count" class="muted"></span></span>
+            <span class="hue-lights-hint muted">click to expand</span>
+          </summary>
+          <div class="hue-lights-actions">
+            <button type="button" id="btn-refresh-lights" class="secondary small">Refresh</button>
+          </div>
+          <div id="hue-lights" class="hue-lights">
+            <p class="empty">Pair the bridge to see available lights.</p>
+          </div>
+        </details>
       </section>
 
       <!-- ============================================================ Location -->
@@ -212,21 +231,11 @@
           </label>
         </div>
 
-        <h3>Override switches in Apple Home</h3>
-        <div class="form-grid two">
-          <label
-            >Granularity
-            <select id="override-granularity">
-              <option value="per-zone">Per zone (one wind switch per zone)</option>
-              <option value="global">Global (one wind switch total)</option>
-              <option value="none">None (rely on manual valve open for one-off bypass)</option>
-            </select>
-          </label>
-          <label
-            >Override auto-reset (minutes)
-            <input type="number" id="override-reset-min" min="5" max="720" step="5" value="60" />
-          </label>
-        </div>
+        <h3>Display</h3>
+        <p class="hint">
+          Weather blocking applies to the scheduled programme only — a manual valve open or
+          "Run Schedule Now" always waters regardless of the weather.
+        </p>
         <div class="form-grid two">
           <label
             >Wind unit (display)

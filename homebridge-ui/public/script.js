@@ -68,7 +68,6 @@ function defaultConfig() {
       consensusStrategy: 'majority',
       cacheMinutes: 10,
     },
-    override: { autoResetMinutes: 60, granularity: 'per-zone' },
     windUnit: 'm/s',
     logLevel: 'info',
   };
@@ -91,7 +90,194 @@ function defaultConfig() {
   } catch (err) {
     homebridge.toast.error('Could not load plugin config: ' + describeError(err));
   }
+
+  // Kick off the weather status panel and schedule a 15-minute auto-refresh.
+  fetchWeatherStatus().catch(() => undefined);
+  setInterval(() => fetchWeatherStatus().catch(() => undefined), STATUS_REFRESH_MS);
+
+  // Manual refresh button
+  const btnRefresh = document.getElementById('btn-refresh-status');
+  if (btnRefresh) {
+    btnRefresh.addEventListener('click', () => {
+      fetchWeatherStatus().catch(() => undefined);
+    });
+  }
 })();
+
+// ============================================================ weather status
+
+const STATUS_REFRESH_MS = 60 * 60 * 1000; // 1 hour
+
+/** Convert m/s to the display unit from config. */
+function formatWind(ms, unit) {
+  if (ms == null) return null;
+  let val;
+  switch (unit) {
+    case 'km/h': val = ms * 3.6; break;
+    case 'mph':  val = ms * 2.23694; break;
+    case 'kts':  val = ms * 1.94384; break;
+    case 'Bft':  val = Math.min(12, Math.round(Math.pow(ms / 0.836, 2 / 3))); break;
+    default:     val = ms; unit = 'm/s';
+  }
+  return `${Math.round(val * 10) / 10} ${unit}`;
+}
+
+function fmt(v, digits = 1) {
+  return v == null ? null : v.toFixed(digits);
+}
+
+/** One-line plain-English description of the consensus rule. */
+function consensusBlurb(strategy) {
+  switch (strategy) {
+    case 'any': return 'blocks if ANY source reports a blocking condition';
+    case 'all': return 'blocks only when EVERY source agrees';
+    default:    return 'blocks when MOST active sources agree';
+  }
+}
+
+/** Build a small "n/m" vote tag, or '' when there is nothing to show. */
+function voteTag(votes) {
+  if (!votes || votes.total === 0) return '';
+  return ` · ${votes.blocking}/${votes.total}`;
+}
+
+/** Create a fresh element with an optional class and text. */
+function el(tag, className, text) {
+  const e = document.createElement(tag);
+  if (className) e.className = className;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+/** Render the full status panel from the /weather-status response. */
+function renderWeatherStatus(data) {
+  const body = document.getElementById('status-body');
+  if (!body) return;
+  body.innerHTML = '';
+  const unit = data.windUnit || 'm/s';
+
+  // -------- Section 1: weather sources (raw readings) --------
+  const srcSection = el('div', 'ws-section');
+  srcSection.appendChild(el('div', 'ws-section-title', 'Weather sources'));
+
+  if (data.sources && data.sources.length > 0) {
+    const table = el('table', 'ws-table');
+    table.innerHTML =
+      '<thead><tr><th>Source</th><th>Wind</th><th>Rain · 24h</th><th>Forecast · 12h</th></tr></thead>';
+    const tbody = el('tbody');
+    for (const s of data.sources) {
+      const tr = el('tr');
+      tr.appendChild(el('td', 'ws-src-name', s.label));
+      if (!s.ok) {
+        const td = el('td', 'ws-src-err');
+        td.colSpan = 3;
+        td.textContent = s.error || 'Unavailable';
+        tr.appendChild(td);
+      } else {
+        const w = formatWind(s.windSpeedMs, unit);
+        tr.appendChild(el('td', null, w ? `${w}${s.windOctant ? ' ' + s.windOctant : ''}` : '—'));
+        tr.appendChild(el('td', null, s.rainLast24hMm != null ? `${fmt(s.rainLast24hMm)} mm` : '—'));
+        tr.appendChild(el('td', null, s.rainNext12hMm != null ? `${fmt(s.rainNext12hMm)} mm` : '—'));
+      }
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    srcSection.appendChild(table);
+  } else {
+    srcSection.appendChild(el('p', 'muted', 'No weather sources configured.'));
+  }
+  body.appendChild(srcSection);
+
+  // -------- Section 2: per-zone decision table --------
+  const zoneSection = el('div', 'ws-section');
+  const title = el('div', 'ws-section-title');
+  title.appendChild(document.createTextNode('Per zone'));
+  const cBadge = el('span', 'consensus-badge', `consensus: ${data.consensusStrategy || 'majority'}`);
+  cBadge.title = consensusBlurb(data.consensusStrategy);
+  title.appendChild(cBadge);
+  zoneSection.appendChild(title);
+
+  if (!data.zones || data.zones.length === 0) {
+    zoneSection.appendChild(el('p', 'muted', 'No zones configured yet.'));
+    body.appendChild(zoneSection);
+    return;
+  }
+
+  const mw = data.measuredWind;
+  const windMeasured = mw
+    ? `${formatWind(mw.speedMs, unit)}${mw.octant ? ' ' + mw.octant : ''}`
+    : '—';
+  const rainM = (data.rain && data.rain.measured) || {};
+  const rainT = (data.rain && data.rain.thresholds) || {};
+  const rainEnabled = data.rain && data.rain.enabled;
+  const rain24Str = rainM.past24hMm != null ? `${fmt(rainM.past24hMm)}` : '—';
+  const rain12Str = rainM.next12hMm != null ? `${fmt(rainM.next12hMm)}` : '—';
+
+  const table = el('table', 'ws-table ws-zones');
+  table.innerHTML = '<thead><tr><th>Zone</th><th>Wind</th><th>Rain</th></tr></thead>';
+  const tbody = el('tbody');
+
+  for (const z of data.zones) {
+    const tr = el('tr', z.blocked ? 'zone-row blocked' : 'zone-row clear');
+
+    // --- Zone cell ---
+    const zoneCell = el('td', 'zcell-zone');
+    const dot = el('span', z.blocked ? 'zstatus blocked' : 'zstatus clear', z.blocked ? '⛔' : '✓');
+    zoneCell.appendChild(dot);
+    zoneCell.appendChild(el('span', 'zname', z.name));
+    tr.appendChild(zoneCell);
+
+    // --- Wind cell ---
+    const windCell = el('td', 'zcell' + (z.windBlocked ? ' cell-blocked' : ''));
+    if (!z.windEnabled) {
+      windCell.appendChild(el('div', 'zval-off', 'off'));
+    } else {
+      windCell.appendChild(el('div', 'zval', windMeasured));
+      const octStr = Array.isArray(z.windOctants) && z.windOctants.length > 0
+        ? z.windOctants.join(' ')
+        : 'any dir';
+      const minStr = formatWind(z.windMinSpeedMs, unit) || `${z.windMinSpeedMs}`;
+      windCell.appendChild(el('div', 'zthresh', `≥ ${minStr} · ${octStr}${voteTag(z.windVotes)}`));
+    }
+    tr.appendChild(windCell);
+
+    // --- Rain cell --- (global value, shown per row so each row is a complete decision)
+    const rainCell = el('td', 'zcell' + (z.rainBlocked ? ' cell-blocked' : ''));
+    if (!rainEnabled) {
+      rainCell.appendChild(el('div', 'zval-off', 'off'));
+    } else {
+      rainCell.appendChild(el('div', 'zval', `24h ${rain24Str} · 12h ${rain12Str} mm`));
+      rainCell.appendChild(
+        el('div', 'zthresh', `≥ ${rainT.past24hMm ?? 0} / ${rainT.next12hMm ?? 0} mm${voteTag(z.rainVotes)}`),
+      );
+    }
+    tr.appendChild(rainCell);
+
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  zoneSection.appendChild(table);
+  body.appendChild(zoneSection);
+}
+
+async function fetchWeatherStatus() {
+  const updEl = document.getElementById('status-updated');
+  const body = document.getElementById('status-body');
+  if (updEl) updEl.textContent = 'Fetching…';
+  try {
+    const data = await homebridge.request('/weather-status', state.config);
+    renderWeatherStatus(data);
+    if (updEl) {
+      const d = new Date(data.fetchedAt);
+      updEl.textContent = `Refreshed at ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+    }
+  } catch (err) {
+    if (body) {
+      body.innerHTML = `<p class="status-fetch-error">Could not load weather: ${describeError(err)}</p>`;
+    }
+    if (updEl) updEl.textContent = '';
+  }
+}
 
 /**
  * Mirror Homebridge UI X's theme into our iframe via the `data-theme`
@@ -176,7 +362,6 @@ function mergeDefaults(cfg) {
     hue: { ...base.hue, ...(cfg.hue || {}) },
     location: { ...base.location, ...(cfg.location || {}) },
     weather: { ...base.weather, ...(cfg.weather || {}) },
-    override: { ...base.override, ...(cfg.override || {}) },
     rain: migratedRain,
     pump: cfg.pump || undefined,
     zones,
@@ -335,8 +520,6 @@ function hydrateForm() {
   setValue('rain-past24h', rain.past24hThresholdMm ?? 5);
   setValue('rain-next12h', rain.next12hThresholdMm ?? 2);
 
-  setValue('override-reset-min', c.override.autoResetMinutes || 60);
-  setValue('override-granularity', c.override.granularity || 'per-zone');
   setValue('wind-unit', c.windUnit || 'm/s');
   setValue('log-level', c.logLevel || 'info');
 
@@ -392,12 +575,9 @@ function serialise() {
     next12hThresholdMm: Math.max(0, Number(readValue('rain-next12h', 'number') || 0)),
   };
 
-  c.override.autoResetMinutes = Math.max(
-    5,
-    Number(readValue('override-reset-min', 'number') || 60),
-  );
-  const g = readValue('override-granularity', 'string');
-  c.override.granularity = g === 'global' || g === 'none' ? g : 'per-zone';
+  // Override switches were removed in v0.2 — strip any leftover key from
+  // configs saved by an earlier version so it doesn't linger in config.json.
+  delete c.override;
   c.windUnit = readValue('wind-unit', 'string');
   c.logLevel = readValue('log-level', 'string');
 
@@ -906,6 +1086,9 @@ async function refreshLights() {
 
 function renderLights() {
   const container = document.getElementById('hue-lights');
+  const countEl = document.getElementById('hue-lights-count');
+  const n = state.lights ? state.lights.length : 0;
+  if (countEl) countEl.textContent = n > 0 ? `(${n})` : '';
   if (!state.lights || state.lights.length === 0) {
     container.innerHTML = '<p class="empty">No lights detected.</p>';
     return;
