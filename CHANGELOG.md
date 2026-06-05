@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] — 2026-06-05
+
+### Changed
+
+- **Weather status dashboard** — new "Current weather" panel at the top of the plugin settings UI. Shows live readings per source (wind speed/direction, rain past 24h, forecast 12h) and a per-zone decision table with measured values vs configured thresholds, vote tally, and a consensus badge. Auto-refreshes hourly; manual refresh button always available.
+- **Hue device list collapsed** — the detected lights/sockets list is now folded by default (device count shown in the header). Only needs to be open during initial setup.
+- **SetDuration persisted** — the valve duration you set in Apple Home is now saved to the state file and restored after a Homebridge restart, so it no longer resets to 5 minutes.
+- **RemainingDuration countdown fixed** — the countdown timer in Apple Home now reflects the actual schedule duration (e.g. 20 min) instead of the HomeKit default SetDuration.
+
+### Removed
+
+- **Manual override subsystem removed** — weather blocking applies to the scheduled programme only. A manual valve open or "Run Schedule Now" always waters regardless of weather conditions. The wind/rain override switches in Apple Home are gone; no configuration needed.
+
+### Fixed
+
+- "Run Schedule Now" now bypasses weather blocking — pressing the button always runs the full schedule regardless of wind or rain conditions (both main steps and run-with buddies).
+
 ## [0.1.0] — 2026-06-02
 
 Initial public release. Renamed the package to **homebridge-smart-irrigation-with-hue** ahead of npm publish. Bundles every feature delivered in phases 1–11 plus the post-Phase-11 polish, with one late refinement before launch: rain blocking is now a single global setting instead of per-zone, since rain falls equally on every zone of a single irrigation rig.
