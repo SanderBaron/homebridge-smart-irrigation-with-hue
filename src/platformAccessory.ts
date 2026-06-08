@@ -285,7 +285,22 @@ export class SmartIrrigationAccessory {
         const durationMs = state.setDurationSec * 1000;
         void this.openValve(zoneId, durationMs, 'manual');
       } else {
-        void this.closeValve(zoneId, 'manual');
+        // If a scheduled (or run-now) sequence is currently active, closing any
+        // valve mid-run aborts the entire programme so the remaining steps don't
+        // fire unexpectedly. The user can always restart with "Run Schedule Now".
+        const isScheduleRunning =
+          this.deps.scheduler.getActiveZones().length > 0 ||
+          this.deps.scheduler.getQueuedZones().length > 0;
+        if (isScheduleRunning) {
+          const zone = this.deps.config.zones.find((z) => z.id === zoneId);
+          this.platform.log.info(
+            'Zone "%s" turned off mid-schedule — aborting programme',
+            zone?.name ?? zoneId,
+          );
+          void this.deps.scheduler.stopAll();
+        } else {
+          void this.closeValve(zoneId, 'manual');
+        }
       }
     };
   }
